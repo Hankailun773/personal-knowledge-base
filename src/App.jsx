@@ -46,6 +46,38 @@ const SORT_OPTIONS = [
   { key: 'title',   label: '标题 A→Z' },
 ]
 
+function stripHtml(html) {
+  if (!html) return ''
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function getSearchPreview(entry, query) {
+  const text = stripHtml(entry.content || '')
+  if (!text) return null
+  const q = query.toLowerCase()
+  const idx = text.toLowerCase().indexOf(q)
+  if (idx === -1) {
+    return text.length > 40 ? text.slice(0, 40) + '…' : text
+  }
+  const start = Math.max(0, idx - 20)
+  const end = Math.min(text.length, idx + q.length + 20)
+  return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '')
+}
+
+function highlightMatch(preview, query) {
+  if (!preview) return null
+  const q = query.toLowerCase()
+  const idx = preview.toLowerCase().indexOf(q)
+  if (idx === -1) return <span className="search-preview">{preview}</span>
+  return (
+    <span className="search-preview">
+      {preview.slice(0, idx)}
+      <strong className="search-highlight">{preview.slice(idx, idx + query.length)}</strong>
+      {preview.slice(idx + query.length)}
+    </span>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState({ categories: [], entries: [] })
   const [selectedCatId, setSelectedCatId] = useState(null)
@@ -62,6 +94,9 @@ export default function App() {
   const [isAddingCat, setIsAddingCat] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const catInputRef = useRef(null)
+
+  const [isAddingTag, setIsAddingTag] = useState(false)
+  const [tagInput, setTagInput] = useState('')
 
   const [isAddingEntry, setIsAddingEntry] = useState(false)
   const [newEntryTitle, setNewEntryTitle] = useState('')
@@ -81,12 +116,16 @@ export default function App() {
   const [titleDraft, setTitleDraft] = useState('')
 
   const [showRecent, setShowRecent] = useState(false)
+  const [showTags, setShowTags] = useState(false)
+  const [expandedTagName, setExpandedTagName] = useState(null)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true')
   const [sortOrder, setSortOrder] = useState(() => localStorage.getItem('sortOrder') || 'updated')
   const [showSortMenu, setShowSortMenu] = useState(false)
 
   const dataRef = useRef(data)
   dataRef.current = data
+  const sortKeyRef = useRef('')
+  const sortedIdsRef = useRef([])
   const autoSaveTimerRef = useRef(null)
   const searchInputRef = useRef(null)
   const savedMsgTimerRef = useRef(null)
@@ -268,6 +307,8 @@ export default function App() {
     setIsDirty(false)
     setViewMode('preview')
     setSelectedEntryId(id)
+    setIsAddingTag(false)
+    setTagInput('')
   }
 
   function updateEntry(id, updater) {
@@ -346,7 +387,10 @@ export default function App() {
   // ── 分类操作 ──
   function handleSelectCategory(id) {
     flushSave()
+    setSearchQuery('')
     setShowRecent(false)
+    setShowTags(false)
+    setExpandedTagName(null)
     setSelectedCatId(id)
     if (id !== selectedCatId) setSelectedEntryId(null)
   }
@@ -395,6 +439,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
       pinned: false,
       pinnedAt: null,
+      tags: [],
       children: [],
     }
     saveData({ ...baseData, entries: [...baseData.entries, newEntry] })
@@ -430,6 +475,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
       pinned: false,
       pinnedAt: null,
+      tags: [],
     }
     const nextEntries = baseData.entries.map((e) =>
       e.id === parentId ? { ...e, children: [...(e.children || []), child] } : e
@@ -515,7 +561,19 @@ export default function App() {
   // ── Derived ──
   const { categories, entries: allEntries } = data
   const selectedCategory = categories.find((c) => c.id === selectedCatId)
-  const categoryEntries = sortEntries(allEntries.filter((e) => e.categoryId === selectedCatId), sortOrder)
+
+  // 稳定排序：只有 ID 集合、置顶状态、分类、排序方式变化时才重新排序
+  // 保存操作更新 updatedAt，不应触发列表重新排序（避免视觉跳动）
+  const filteredEntries = allEntries.filter((e) => e.categoryId === selectedCatId)
+  const shapeKey = filteredEntries.map((e) => `${e.id}:${e.pinned ? 1 : 0}:${e.pinnedAt || 0}`).join(',')
+  const currentSortKey = `${selectedCatId}|${sortOrder}|${shapeKey}`
+  if (sortKeyRef.current !== currentSortKey) {
+    sortKeyRef.current = currentSortKey
+    sortedIdsRef.current = sortEntries(filteredEntries, sortOrder).map((e) => e.id)
+  }
+  const categoryEntries = sortedIdsRef.current
+    .map((id) => filteredEntries.find((e) => e.id === id))
+    .filter(Boolean)
 
   const selectedEntryInfo = selectedEntryId ? findEntryById(selectedEntryId) : null
   const selectedEntry = selectedEntryInfo?.entry || null
@@ -547,11 +605,54 @@ export default function App() {
     setShowRecent(false)
   }
 
+  function handleSelectTagEntry({ entry, parent, categoryId }) {
+    flushSave()
+    setSelectedCatId(categoryId)
+    if (parent) expandEntry(parent.id)
+    applyEntrySwitch(entry.id, entry.content || '', entry.title || '')
+    setShowTags(false)
+    setExpandedTagName(null)
+  }
+
+  // 标签映射：tag → [{entry, parent, categoryId}]
+  const tagMap = new Map()
+  for (const item of allSearchable) {
+    for (const tag of (item.entry.tags || [])) {
+      if (!tagMap.has(tag)) tagMap.set(tag, [])
+      tagMap.get(tag).push(item)
+    }
+  }
+  const allTagNames = [...tagMap.keys()].sort()
+
   const isSearching = searchQuery.trim().length > 0
+
+  // 所有条目的标签汇总去重，用于输入建议
+  const allTags = [...new Set(allSearchable.flatMap(({ entry }) => entry.tags || []))]
+  const filteredSuggestions = tagInput.trim()
+    ? allTags.filter((t) =>
+        t.toLowerCase().includes(tagInput.toLowerCase()) &&
+        !(selectedEntry?.tags || []).includes(t)
+      )
+    : []
+
+  function handleAddTag(tag) {
+    const trimmed = tag.trim()
+    if (!trimmed || !selectedEntryId) return
+    if ((selectedEntry?.tags || []).includes(trimmed)) {
+      setTagInput(''); setIsAddingTag(false); return
+    }
+    updateEntry(selectedEntryId, (e) => ({ ...e, tags: [...(e.tags || []), trimmed] }))
+    setTagInput(''); setIsAddingTag(false)
+  }
+
+  function handleRemoveTag(tag) {
+    if (!selectedEntryId) return
+    updateEntry(selectedEntryId, (e) => ({ ...e, tags: (e.tags || []).filter((t) => t !== tag) }))
+  }
   const searchResults = isSearching
     ? allSearchable.filter(({ entry }) => {
         const q = searchQuery.toLowerCase()
-        return entry.title.toLowerCase().includes(q) || (entry.content || '').toLowerCase().includes(q)
+        return entry.title.toLowerCase().includes(q) || stripHtml(entry.content || '').toLowerCase().includes(q)
       })
     : []
 
@@ -608,6 +709,22 @@ export default function App() {
     )
   }
 
+  function renderEntryMeta(entry, timeContent) {
+    const tags = entry.tags || []
+    if (tags.length === 0) return <span className="entry-time">{timeContent}</span>
+    const visibleTags = tags.slice(0, 3)
+    const extra = tags.length - 3
+    return (
+      <>
+        <div className="entry-tags">
+          {visibleTags.map((t) => <span key={t} className="entry-tag-pill">{t}</span>)}
+          {extra > 0 && <span className="entry-tag-pill entry-tag-more">+{extra}</span>}
+        </div>
+        <span className="entry-time">{timeContent}</span>
+      </>
+    )
+  }
+
   return (
     <div className="app">
       {/* 左侧分类导航 */}
@@ -633,15 +750,21 @@ export default function App() {
 
         <nav className="category-list">
           <div
-            className={`category-item ${showRecent ? 'active' : ''}`}
-            onClick={() => { flushSave(); setShowRecent(true) }}
+            className={`category-item ${showRecent && !showTags ? 'active' : ''}`}
+            onClick={() => { flushSave(); setSearchQuery(''); setShowRecent(true); setShowTags(false); setExpandedTagName(null) }}
           >
             <span className="category-name">🕐 最近编辑</span>
+          </div>
+          <div
+            className={`category-item ${showTags ? 'active' : ''}`}
+            onClick={() => { flushSave(); setSearchQuery(''); setShowTags(true); setShowRecent(false) }}
+          >
+            <span className="category-name">🏷 标签</span>
           </div>
           {categories.map((cat) => (
             <div
               key={cat.id}
-              className={`category-item ${!showRecent && selectedCatId === cat.id ? 'active' : ''}`}
+              className={`category-item ${!showRecent && !showTags && selectedCatId === cat.id ? 'active' : ''}`}
               onClick={() => renamingCatId !== cat.id && handleSelectCategory(cat.id)}
               onDoubleClick={() => startRename(cat.id)}
               onContextMenu={(e) => openContextMenu(e, cat.id)}
@@ -716,9 +839,11 @@ export default function App() {
               ? `搜索结果 ${searchResults.length > 0 ? `(${searchResults.length})` : ''}`
               : showRecent
               ? '最近编辑'
+              : showTags
+              ? '标签'
               : selectedCategory?.name || ''}
           </span>
-          {!isSearching && !showRecent && (
+          {!isSearching && !showRecent && !showTags && (
             <div className="panel-header-actions">
               {!isAddingEntry && (
                 <button className="add-entry-icon-btn" onClick={() => setIsAddingEntry(true)} title="新增条目">+</button>
@@ -790,9 +915,8 @@ export default function App() {
                       <>
                         <div className="entry-info">
                           <span className="entry-title">{entry.title}</span>
-                          <span className="entry-time">
-                            {parent ? `${cat?.name || ''} / ${parent.title}` : cat?.name || ''}
-                          </span>
+                          {highlightMatch(getSearchPreview(entry, searchQuery), searchQuery)}
+                          {renderEntryMeta(entry, parent ? `${cat?.name || ''} / ${parent.title}` : cat?.name || '')}
                         </div>
                         <button
                           className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
@@ -839,9 +963,7 @@ export default function App() {
                       <>
                         <div className="entry-info">
                           <span className="entry-title">{entry.title}</span>
-                          <span className="entry-time">
-                            {parent ? `${cat?.name || ''} / ${parent.title}` : cat?.name || ''}
-                          </span>
+                          {renderEntryMeta(entry, parent ? `${cat?.name || ''} / ${parent.title}` : cat?.name || '')}
                         </div>
                         <button
                           className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
@@ -850,6 +972,45 @@ export default function App() {
                         >{entry.pinned ? '★' : '☆'}</button>
                       </>
                     )}
+                  </div>
+                )
+              })
+            )
+          ) : showTags ? (
+            allTagNames.length === 0 ? (
+              <div className="entry-empty">暂无标签</div>
+            ) : (
+              allTagNames.map((tag) => {
+                const tagEntries = tagMap.get(tag) || []
+                const isExpanded = expandedTagName === tag
+                return (
+                  <div key={tag}>
+                    <div
+                      className="tag-section-header"
+                      onClick={() => setExpandedTagName(isExpanded ? null : tag)}
+                    >
+                      <span className="tag-section-arrow">{isExpanded ? '▾' : '▸'}</span>
+                      <span className="tag-section-name">{tag}</span>
+                      <span className="tag-section-count">{tagEntries.length}</span>
+                    </div>
+                    {isExpanded && tagEntries.map((result) => {
+                      const { entry, parent, categoryId } = result
+                      const cat = categories.find((c) => c.id === categoryId)
+                      return (
+                        <div
+                          key={entry.id}
+                          className={`entry-item entry-child ${selectedEntryId === entry.id ? 'active' : ''}`}
+                          onClick={() => handleSelectTagEntry(result)}
+                          onDoubleClick={() => startRenameEntry(entry.id)}
+                          onContextMenu={(e) => openEntryContextMenu(e, entry.id)}
+                        >
+                          <div className="entry-info">
+                            <span className="entry-title">{entry.title}</span>
+                            {renderEntryMeta(entry, parent ? `${cat?.name || ''} / ${parent.title}` : cat?.name || '')}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )
               })
@@ -916,7 +1077,7 @@ export default function App() {
                           <>
                             <div className="entry-info">
                               <span className="entry-title">{entry.title}</span>
-                              <span className="entry-time">{formatDate(entry.createdAt)}</span>
+                              {renderEntryMeta(entry, formatDate(entry.createdAt))}
                             </div>
                             <button
                               className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
@@ -962,7 +1123,7 @@ export default function App() {
                               <>
                                 <div className="entry-info">
                                   <span className="entry-title">{child.title}</span>
-                                  <span className="entry-time">{formatDate(child.createdAt)}</span>
+                                  {renderEntryMeta(child, formatDate(child.createdAt))}
                                 </div>
                                 <button
                                   className={`pin-btn ${child.pinned ? 'is-pinned' : ''}`}
@@ -1042,6 +1203,44 @@ export default function App() {
                     >预览</button>
                   </div>
                 </div>
+              </div>
+
+              {/* 标签行 */}
+              <div className="tag-row">
+                {(selectedEntry?.tags || []).map((tag) => (
+                  <span key={tag} className="tag-pill">
+                    {tag}
+                    <button className="tag-remove" onClick={() => handleRemoveTag(tag)} title="移除标签">×</button>
+                  </span>
+                ))}
+                {isAddingTag ? (
+                  <div className="tag-input-wrap">
+                    <input
+                      autoFocus
+                      className="tag-input"
+                      value={tagInput}
+                      placeholder="标签名…"
+                      maxLength={20}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddTag(tagInput)
+                        if (e.key === 'Escape') { setIsAddingTag(false); setTagInput('') }
+                      }}
+                      onBlur={() => setTimeout(() => { setIsAddingTag(false); setTagInput('') }, 150)}
+                    />
+                    {filteredSuggestions.length > 0 && (
+                      <div className="tag-suggestions">
+                        {filteredSuggestions.map((t) => (
+                          <button key={t} className="tag-suggestion-item" onMouseDown={() => handleAddTag(t)}>
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button className="tag-add-btn" onClick={() => setIsAddingTag(true)}>+ 添加标签</button>
+                )}
               </div>
             </div>
 

@@ -972,3 +972,204 @@ body.dark .word-count-bar {
   color: #555;
   border-top-color: #3a3a3a;
 }
+
+/* ══════════════════════════════
+   标签区
+══════════════════════════════ */
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 2px 9px;
+  background: #e8e8e6;
+  border-radius: 100px;
+  font-size: 12px;
+  color: #37352f;
+}
+
+.tag-remove {
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: none;
+  color: #9b9a97;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+.tag-remove:hover { background: rgba(0,0,0,0.1); color: #37352f; }
+
+.tag-add-btn {
+  border: none;
+  background: none;
+  color: #9b9a97;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 7px;
+  border-radius: 100px;
+  font-family: inherit;
+  transition: background 0.1s, color 0.1s;
+}
+.tag-add-btn:hover { background: #e8e8e6; color: #37352f; }
+
+.tag-input-wrap { position: relative; }
+
+.tag-input {
+  padding: 2px 10px;
+  border: 1px solid #c7c5c0;
+  border-radius: 100px;
+  font-size: 12px;
+  color: #37352f;
+  background: #ffffff;
+  outline: none;
+  width: 120px;
+  font-family: inherit;
+  transition: border-color 0.1s;
+}
+.tag-input:focus { border-color: #6b7280; }
+
+.tag-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  background: #ffffff;
+  border: 1px solid #e3e2df;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 4px;
+  min-width: 120px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.tag-suggestion-item {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  background: none;
+  color: #37352f;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+.tag-suggestion-item:hover { background: #f0f0ee; }
+
+body.dark .tag-pill { background: #3a3a3a; color: #e0e0e0; }
+body.dark .tag-remove { color: #888; }
+body.dark .tag-remove:hover { background: rgba(255,255,255,0.1); color: #e0e0e0; }
+body.dark .tag-add-btn { color: #888; }
+body.dark .tag-add-btn:hover { background: #3a3a3a; color: #e0e0e0; }
+body.dark .tag-input { background: #333; border-color: #4a4a4a; color: #e0e0e0; }
+body.dark .tag-input:focus { border-color: #555; }
+body.dark .tag-suggestions {
+  background: #2d2d2d; border-color: #3a3a3a;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+body.dark .tag-suggestion-item { color: #e0e0e0; }
+body.dark .tag-suggestion-item:hover { background: #3a3a3a; }
+
+/* ── 条目列表标签展示 ── */
+.entry-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+}
+
+.entry-tags {
+  display: flex;
+  gap: 3px;
+  overflow: hidden;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.entry-tag-pill {
+  font-size: 10px;
+  color: #9b9a97;
+  background: #ebebea;
+  border-radius: 100px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.entry-tag-more { color: #c2c1be; }
+
+body.dark .entry-tag-pill { background: #333; color: #777; }
+body.dark .entry-tag-more { color: #555; }
+
+/* ── 标签视图分组标题 ── */
+.tag-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: #37352f;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.1s;
+  user-select: none;
+}
+.tag-section-header:hover { background: #f7f7f5; }
+
+.tag-section-arrow {
+  font-size: 10px;
+  color: #9b9a97;
+  flex-shrink: 0;
+  width: 10px;
+}
+
+.tag-section-name { flex: 1; }
+
+.tag-section-count {
+  font-size: 11px;
+  color: #b5b4b1;
+  flex-shrink: 0;
+}
+
+body.dark .tag-section-header { color: #e0e0e0; }
+body.dark .tag-section-header:hover { background: #2f2f2f; }
+body.dark .tag-section-arrow { color: #888; }
+body.dark .tag-section-count { color: #555; }
+
+/* ── 搜索结果内容预览 ── */
+.search-preview {
+  display: block;
+  font-size: 11px;
+  color: #9b9a97;
+  line-height: 1.4;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-highlight {
+  font-weight: 600;
+  color: #37352f;
+}
+
+body.dark .search-preview { color: #666; }
+body.dark .search-highlight { color: #c8c8c8; }

@@ -20,6 +20,17 @@ function getDataFilePath() {
   return path.join(app.getPath('userData'), 'data.json')
 }
 
+function normalizeData(data) {
+  return {
+    ...data,
+    entries: (data.entries || []).map((e) => ({
+      ...e,
+      tags: e.tags || [],
+      children: (e.children || []).map((c) => ({ ...c, tags: c.tags || [] })),
+    })),
+  }
+}
+
 function readData() {
   const filePath = getDataFilePath()
   if (!fs.existsSync(filePath)) {
@@ -29,7 +40,7 @@ function readData() {
       try {
         const categories = JSON.parse(fs.readFileSync(oldPath, 'utf-8'))
         if (Array.isArray(categories)) {
-          const data = { categories, entries: [] }
+          const data = normalizeData({ categories, entries: [] })
           fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
           return data
         }
@@ -39,7 +50,7 @@ function readData() {
     return DEFAULT_DATA
   }
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    return normalizeData(JSON.parse(fs.readFileSync(filePath, 'utf-8')))
   } catch {
     return DEFAULT_DATA
   }
