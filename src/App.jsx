@@ -325,7 +325,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <span className="sidebar-icon">📚</span>
-          <span className="sidebar-title">知识库</span>
+          <span className="sidebar-title">Kn0wledge</span>
         </div>
 
         <div className="search-box">

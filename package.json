@@ -1,5 +1,6 @@
 {
-  "name": "first-cc",
+  "name": "kn0wledge",
+  "productName": "Kn0wledge",
   "version": "1.0.0",
   "description": "Knowledge base desktop app",
   "main": "electron/main.js",

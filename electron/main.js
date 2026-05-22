@@ -55,8 +55,10 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    title: 'Kn0wledge',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#ffffff',
+    icon: path.join(__dirname, '../assets/icon.icns'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
