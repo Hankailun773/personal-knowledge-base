@@ -270,6 +270,28 @@
 .entry-item:hover .entry-delete-btn { opacity: 1; }
 .entry-item.active { background: #ebebea; }
 
+.entry-child { padding-left: 22px; }
+
+.expand-btn {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: none;
+  color: #9b9a97;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 2px;
+  border-radius: 2px;
+  transition: color 0.1s;
+}
+
+.expand-btn:hover { color: #37352f; }
+.expand-btn-empty { cursor: default; }
+
 .entry-info {
   flex: 1;
   display: flex;
@@ -370,11 +392,38 @@
 
 .detail-header {
   display: flex;
-  align-items: center;
-  padding: 18px 44px 14px;
+  flex-direction: column;
+  padding: 14px 44px 12px;
   border-bottom: 1px solid #f0f0ee;
-  gap: 12px;
   flex-shrink: 0;
+  gap: 6px;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.bc-seg {
+  font-size: 12px;
+  color: #9b9a97;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.bc-sep { font-size: 12px; color: #c2c1be; flex-shrink: 0; }
+
+.bc-current { color: #37352f; font-weight: 500; }
+
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .detail-title {
