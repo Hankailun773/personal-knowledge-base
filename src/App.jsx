@@ -55,6 +55,13 @@ export default function App() {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
 
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const autoSaveTimerRef = useRef(null)
+  const savedMsgTimerRef = useRef(null)
+  const [pendingContent, setPendingContent] = useState(null) // null = 无待保存内容
+  const [saveStatus, setSaveStatus] = useState(null) // null | 'saved'
+
   useEffect(() => {
     window.electronAPI.getData().then((d) => {
       setData(d)
@@ -74,7 +81,30 @@ export default function App() {
     if (isEditingTitle) { titleInputRef.current?.focus(); titleInputRef.current?.select() }
   }, [isEditingTitle])
 
+  // 防抖自动保存：pendingContent 变化时重置 1.5s 计时器
   useEffect(() => {
+    if (pendingContent === null || !selectedEntryId) return
+    const id = selectedEntryId
+    const content = pendingContent
+    const title = editTitle
+    const timer = setTimeout(() => {
+      performSave(id, title, content, dataRef.current)
+      setIsDirty(false)
+      setPendingContent(null)
+      setSaveStatus('saved')
+      clearTimeout(savedMsgTimerRef.current)
+      savedMsgTimerRef.current = setTimeout(() => setSaveStatus(null), 2000)
+    }, 1500)
+    autoSaveTimerRef.current = timer
+    return () => {
+      clearTimeout(timer)
+      autoSaveTimerRef.current = null
+    }
+  }, [pendingContent, selectedEntryId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // 切换条目时：先清空待保存内容（自动取消计时器），再加载新条目
+    setPendingContent(null)
     setIsEditingTitle(false)
     setTitleDraft('')
     if (!selectedEntryId) {
@@ -101,9 +131,30 @@ export default function App() {
     window.electronAPI.saveData(next)
   }
 
-  function checkUnsaved() {
-    if (!isDirty) return true
-    return window.confirm('有未保存的修改，确定要离开吗？')
+  function performSave(entryId, title, content, currentData) {
+    const nextEntries = currentData.entries.map((e) => {
+      if (e.id === entryId) return { ...e, title: title || e.title, content }
+      const children = e.children || []
+      if (children.some((c) => c.id === entryId)) {
+        return { ...e, children: children.map((c) => c.id === entryId ? { ...c, title: title || c.title, content } : c) }
+      }
+      return e
+    })
+    const next = { ...currentData, entries: nextEntries }
+    setData(next)
+    window.electronAPI.saveData(next)
+    return next
+  }
+
+  function flushSave() {
+    if (!isDirty || !selectedEntryId) return dataRef.current
+    clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = null
+    const content = pendingContent !== null ? pendingContent : editContent
+    const next = performSave(selectedEntryId, editTitle, content, dataRef.current)
+    setIsDirty(false)
+    setPendingContent(null)
+    return next
   }
 
   // ── 通用条目帮助函数 ──
@@ -115,6 +166,27 @@ export default function App() {
       }
     }
     return null
+  }
+
+  // 从指定数据里找条目（event handler 里用，避免闭包陈旧问题）
+  function findEntryInData(id, d) {
+    if (!id || !d) return null
+    for (const e of d.entries) {
+      if (e.id === id) return e
+      const child = (e.children || []).find((c) => c.id === id)
+      if (child) return child
+    }
+    return null
+  }
+
+  // 切换到指定条目，保证 editContent 和 selectedEntryId 同批次更新
+  function applyEntrySwitch(id, content, title) {
+    setEditContent(content)
+    setEditTitle(title)
+    setPendingContent(null)
+    setIsDirty(false)
+    setViewMode('preview')
+    setSelectedEntryId(id)
   }
 
   function updateEntry(id, updater) {
@@ -193,7 +265,7 @@ export default function App() {
   // ── 分类操作 ──
   function handleSelectCategory(id) {
     if (id === selectedCatId) return
-    if (!checkUnsaved()) return
+    flushSave()
     setSelectedCatId(id)
     setSelectedEntryId(null)
   }
@@ -215,6 +287,7 @@ export default function App() {
     const nextEntries = data.entries.filter((e) => e.categoryId !== id)
     saveData({ categories: nextCats, entries: nextEntries })
     if (selectedCatId === id) {
+      clearTimeout(autoSaveTimerRef.current)
       setSelectedCatId(nextCats[0].id)
       setSelectedEntryId(null)
       setIsDirty(false)
@@ -224,14 +297,15 @@ export default function App() {
   // ── 条目操作 ──
   function handleSelectEntry(id) {
     if (id === selectedEntryId) return
-    if (!checkUnsaved()) return
-    setSelectedEntryId(id)
+    const baseData = flushSave()
+    const found = findEntryInData(id, baseData)
+    applyEntrySwitch(id, found?.content || '', found?.title || '')
   }
 
   function handleAddEntry() {
     const title = newEntryTitle.trim()
     if (!title) { setIsAddingEntry(false); setNewEntryTitle(''); return }
-    if (!checkUnsaved()) return
+    const baseData = flushSave()
     const newEntry = {
       id: Date.now().toString(),
       categoryId: selectedCatId,
@@ -242,8 +316,8 @@ export default function App() {
       pinnedAt: null,
       children: [],
     }
-    saveData({ ...data, entries: [...data.entries, newEntry] })
-    setSelectedEntryId(newEntry.id)
+    saveData({ ...baseData, entries: [...baseData.entries, newEntry] })
+    applyEntrySwitch(newEntry.id, '', newEntry.title)
     setIsAddingEntry(false)
     setNewEntryTitle('')
   }
@@ -259,6 +333,7 @@ export default function App() {
     // 若删除的是一级条目，其子条目中有选中的也要清除
     const childIds = found?.entry?.children?.map((c) => c.id) || []
     if (selectedEntryId === id || childIds.includes(selectedEntryId)) {
+      clearTimeout(autoSaveTimerRef.current)
       setSelectedEntryId(null)
       setIsDirty(false)
     }
@@ -266,7 +341,7 @@ export default function App() {
   }
 
   function handleAddChild(parentId) {
-    if (!checkUnsaved()) return
+    const baseData = flushSave()
     const child = {
       id: Date.now().toString(),
       title: '新子条目',
@@ -275,22 +350,22 @@ export default function App() {
       pinned: false,
       pinnedAt: null,
     }
-    const nextEntries = data.entries.map((e) =>
+    const nextEntries = baseData.entries.map((e) =>
       e.id === parentId ? { ...e, children: [...(e.children || []), child] } : e
     )
-    saveData({ ...data, entries: nextEntries })
+    saveData({ ...baseData, entries: nextEntries })
     expandEntry(parentId)
-    setSelectedEntryId(child.id)
+    applyEntrySwitch(child.id, '', child.title)
     setRenamingEntryId(child.id)
     setRenameEntryValue(child.title)
   }
 
   // ── 搜索 ──
   function handleSelectSearchResult({ entry, parent, categoryId }) {
-    if (!checkUnsaved()) return
+    flushSave()
     setSelectedCatId(categoryId)
     if (parent) expandEntry(parent.id)
-    setSelectedEntryId(entry.id)
+    applyEntrySwitch(entry.id, entry.content || '', entry.title || '')
     setSearchQuery('')
   }
 
@@ -344,12 +419,16 @@ export default function App() {
 
   // ── 详情保存 ──
   function handleSave() {
-    updateEntry(selectedEntryId, (e) => ({
-      ...e,
-      title: editTitle || e.title,
-      content: editContent,
-    }))
+    if (!selectedEntryId) return
+    clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = null
+    const content = pendingContent !== null ? pendingContent : editContent
+    performSave(selectedEntryId, editTitle, content, dataRef.current)
     setIsDirty(false)
+    setPendingContent(null)
+    setSaveStatus('saved')
+    clearTimeout(savedMsgTimerRef.current)
+    savedMsgTimerRef.current = setTimeout(() => setSaveStatus(null), 2000)
   }
 
   // ── Derived ──
@@ -753,6 +832,9 @@ export default function App() {
                   {isDirty && (
                     <button className="save-btn" onClick={handleSave}>保存</button>
                   )}
+                  {!isDirty && saveStatus === 'saved' && (
+                    <span className="save-status">已保存</span>
+                  )}
                   <div className="mode-toggle">
                     <button
                       className={`mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
@@ -772,7 +854,12 @@ export default function App() {
                 key={selectedEntryId}
                 content={editContent}
                 editable={viewMode === 'edit'}
-                onChange={(html) => { setEditContent(html); setIsDirty(true) }}
+                onChange={(html) => {
+                  setEditContent(html)
+                  setPendingContent(html)
+                  setIsDirty(true)
+                  setSaveStatus(null)
+                }}
               />
             </div>
           </>
