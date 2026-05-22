@@ -21,6 +21,31 @@ function sortByPin(arr) {
   })
 }
 
+function sortEntries(arr, order) {
+  const secondary = (a, b) => {
+    if (order === 'updated') {
+      const ta = a.updatedAt || new Date(a.createdAt || 0).getTime()
+      const tb = b.updatedAt || new Date(b.createdAt || 0).getTime()
+      return tb - ta
+    }
+    if (order === 'created') return new Date(a.createdAt || 0) - new Date(b.createdAt || 0)
+    if (order === 'title') return (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+    return 0
+  }
+  return [...arr].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1
+    if (!a.pinned && b.pinned) return 1
+    if (a.pinned && b.pinned) return (b.pinnedAt || 0) - (a.pinnedAt || 0)
+    return secondary(a, b)
+  })
+}
+
+const SORT_OPTIONS = [
+  { key: 'updated', label: '最新修改' },
+  { key: 'created', label: '最早创建' },
+  { key: 'title',   label: '标题 A→Z' },
+]
+
 export default function App() {
   const [data, setData] = useState({ categories: [], entries: [] })
   const [selectedCatId, setSelectedCatId] = useState(null)
@@ -55,9 +80,15 @@ export default function App() {
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
 
+  const [showRecent, setShowRecent] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true')
+  const [sortOrder, setSortOrder] = useState(() => localStorage.getItem('sortOrder') || 'updated')
+  const [showSortMenu, setShowSortMenu] = useState(false)
+
   const dataRef = useRef(data)
   dataRef.current = data
   const autoSaveTimerRef = useRef(null)
+  const searchInputRef = useRef(null)
   const savedMsgTimerRef = useRef(null)
   const [pendingContent, setPendingContent] = useState(null) // null = 无待保存内容
   const [saveStatus, setSaveStatus] = useState(null) // null | 'saved'
@@ -80,6 +111,55 @@ export default function App() {
   useEffect(() => {
     if (isEditingTitle) { titleInputRef.current?.focus(); titleInputRef.current?.select() }
   }, [isEditingTitle])
+
+  useEffect(() => {
+    document.body.classList.toggle('dark', darkMode)
+    localStorage.setItem('darkMode', String(darkMode))
+  }, [darkMode])
+
+  // 全局快捷键（用 ref 包裹 handler，只注册一次监听器）
+  const shortcutHandlerRef = useRef(null)
+  shortcutHandlerRef.current = (e) => {
+    if (!e.metaKey) return
+    const tag = document.activeElement?.tagName
+    const inInput = tag === 'INPUT' || tag === 'TEXTAREA'
+    const inRichEditor = document.activeElement?.classList.contains('ProseMirror')
+
+    if (e.key === 's' || e.key === 'S') {
+      if (selectedEntryId && viewMode === 'edit') {
+        e.preventDefault()
+        handleSave()
+      }
+      return
+    }
+    if (e.key === 'n' || e.key === 'N') {
+      if (!inInput && !inRichEditor && selectedCatId) {
+        e.preventDefault()
+        if (!selectedEntryId) {
+          // 没有选中条目：新建一级条目
+          setIsAddingEntry(true)
+        } else {
+          const info = findEntryById(selectedEntryId)
+          const parentId = info?.parent ? info.parent.id : selectedEntryId
+          // 选中一级条目：新建子条目；选中二级条目：在同一父条目下新建
+          handleAddChild(parentId)
+        }
+      }
+      return
+    }
+    if (e.key === 'f' || e.key === 'F') {
+      if (!inInput && !inRichEditor) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      }
+    }
+  }
+  useEffect(() => {
+    const handler = (e) => shortcutHandlerRef.current(e)
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // 防抖自动保存：pendingContent 变化时重置 1.5s 计时器
   useEffect(() => {
@@ -132,11 +212,12 @@ export default function App() {
   }
 
   function performSave(entryId, title, content, currentData) {
+    const now = Date.now()
     const nextEntries = currentData.entries.map((e) => {
-      if (e.id === entryId) return { ...e, title: title || e.title, content }
+      if (e.id === entryId) return { ...e, title: title || e.title, content, updatedAt: now }
       const children = e.children || []
       if (children.some((c) => c.id === entryId)) {
-        return { ...e, children: children.map((c) => c.id === entryId ? { ...c, title: title || c.title, content } : c) }
+        return { ...e, children: children.map((c) => c.id === entryId ? { ...c, title: title || c.title, content, updatedAt: now } : c) }
       }
       return e
     })
@@ -264,10 +345,10 @@ export default function App() {
 
   // ── 分类操作 ──
   function handleSelectCategory(id) {
-    if (id === selectedCatId) return
     flushSave()
+    setShowRecent(false)
     setSelectedCatId(id)
-    setSelectedEntryId(null)
+    if (id !== selectedCatId) setSelectedEntryId(null)
   }
 
   function handleAddCategory() {
@@ -434,7 +515,7 @@ export default function App() {
   // ── Derived ──
   const { categories, entries: allEntries } = data
   const selectedCategory = categories.find((c) => c.id === selectedCatId)
-  const categoryEntries = sortByPin(allEntries.filter((e) => e.categoryId === selectedCatId))
+  const categoryEntries = sortEntries(allEntries.filter((e) => e.categoryId === selectedCatId), sortOrder)
 
   const selectedEntryInfo = selectedEntryId ? findEntryById(selectedEntryId) : null
   const selectedEntry = selectedEntryInfo?.entry || null
@@ -448,6 +529,24 @@ export default function App() {
       allSearchable.push({ entry: c, parent: e, categoryId: e.categoryId })
     }
   }
+
+  // 最近编辑：按 updatedAt（没有则用 createdAt）倒序，最多 20 条
+  const recentEntries = [...allSearchable]
+    .sort((a, b) => {
+      const ta = a.entry.updatedAt || new Date(a.entry.createdAt || 0).getTime()
+      const tb = b.entry.updatedAt || new Date(b.entry.createdAt || 0).getTime()
+      return tb - ta
+    })
+    .slice(0, 20)
+
+  function handleSelectRecentEntry({ entry, parent, categoryId }) {
+    flushSave()
+    setSelectedCatId(categoryId)
+    if (parent) expandEntry(parent.id)
+    applyEntrySwitch(entry.id, entry.content || '', entry.title || '')
+    setShowRecent(false)
+  }
+
   const isSearching = searchQuery.trim().length > 0
   const searchResults = isSearching
     ? allSearchable.filter(({ entry }) => {
@@ -520,6 +619,7 @@ export default function App() {
 
         <div className="search-box">
           <input
+            ref={searchInputRef}
             className="search-input"
             type="text"
             value={searchQuery}
@@ -532,10 +632,16 @@ export default function App() {
         </div>
 
         <nav className="category-list">
+          <div
+            className={`category-item ${showRecent ? 'active' : ''}`}
+            onClick={() => { flushSave(); setShowRecent(true) }}
+          >
+            <span className="category-name">🕐 最近编辑</span>
+          </div>
           {categories.map((cat) => (
             <div
               key={cat.id}
-              className={`category-item ${selectedCatId === cat.id ? 'active' : ''}`}
+              className={`category-item ${!showRecent && selectedCatId === cat.id ? 'active' : ''}`}
               onClick={() => renamingCatId !== cat.id && handleSelectCategory(cat.id)}
               onDoubleClick={() => startRename(cat.id)}
               onContextMenu={(e) => openContextMenu(e, cat.id)}
@@ -588,9 +694,16 @@ export default function App() {
               />
             </div>
           ) : (
-            <button className="add-btn" onClick={() => setIsAddingCat(true)}>
-              <span>+</span> 新增分类
-            </button>
+            <div className="sidebar-footer-row">
+              <button className="add-btn" onClick={() => setIsAddingCat(true)}>
+                <span>+</span> 新增分类
+              </button>
+              <button
+                className="dark-toggle-btn"
+                onClick={() => setDarkMode((d) => !d)}
+                title={darkMode ? '切换到浅色模式' : '切换到深色模式'}
+              >{darkMode ? '☀️' : '🌙'}</button>
+            </div>
           )}
         </div>
       </aside>
@@ -601,10 +714,44 @@ export default function App() {
           <span className="panel-entries-title">
             {isSearching
               ? `搜索结果 ${searchResults.length > 0 ? `(${searchResults.length})` : ''}`
+              : showRecent
+              ? '最近编辑'
               : selectedCategory?.name || ''}
           </span>
-          {!isSearching && !isAddingEntry && (
-            <button className="add-entry-icon-btn" onClick={() => setIsAddingEntry(true)} title="新增条目">+</button>
+          {!isSearching && !showRecent && (
+            <div className="panel-header-actions">
+              {!isAddingEntry && (
+                <button className="add-entry-icon-btn" onClick={() => setIsAddingEntry(true)} title="新增条目">+</button>
+              )}
+              <div className="sort-menu-wrap">
+                <button
+                  className="sort-btn"
+                  onClick={() => setShowSortMenu((v) => !v)}
+                  title="排序方式"
+                >↕</button>
+                {showSortMenu && (
+                  <>
+                    <div className="ctx-overlay" onClick={() => setShowSortMenu(false)} />
+                    <div className="sort-dropdown">
+                      {SORT_OPTIONS.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          className="ctx-item"
+                          onClick={() => {
+                            setSortOrder(key)
+                            localStorage.setItem('sortOrder', key)
+                            setShowSortMenu(false)
+                          }}
+                        >
+                          <span className="sort-check">{sortOrder === key ? '✓' : ''}</span>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
@@ -622,6 +769,55 @@ export default function App() {
                     key={entry.id}
                     className={`entry-item ${selectedEntryId === entry.id ? 'active' : ''}`}
                     onClick={() => !isRenaming && handleSelectSearchResult(result)}
+                    onDoubleClick={() => startRenameEntry(entry.id)}
+                    onContextMenu={(e) => openEntryContextMenu(e, entry.id)}
+                  >
+                    {isRenaming ? (
+                      <input
+                        ref={renameEntryInputRef}
+                        className="rename-input"
+                        value={renameEntryValue}
+                        onChange={(e) => setRenameEntryValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRenameEntry()
+                          if (e.key === 'Escape') cancelRenameEntry()
+                        }}
+                        onBlur={commitRenameEntry}
+                        onClick={(e) => e.stopPropagation()}
+                        maxLength={100}
+                      />
+                    ) : (
+                      <>
+                        <div className="entry-info">
+                          <span className="entry-title">{entry.title}</span>
+                          <span className="entry-time">
+                            {parent ? `${cat?.name || ''} / ${parent.title}` : cat?.name || ''}
+                          </span>
+                        </div>
+                        <button
+                          className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); handleTogglePin(entry.id) }}
+                          title={entry.pinned ? '取消置顶' : '置顶'}
+                        >{entry.pinned ? '★' : '☆'}</button>
+                      </>
+                    )}
+                  </div>
+                )
+              })
+            )
+          ) : showRecent ? (
+            recentEntries.length === 0 ? (
+              <div className="entry-empty">暂无编辑记录</div>
+            ) : (
+              recentEntries.map((result) => {
+                const { entry, parent, categoryId } = result
+                const cat = categories.find((c) => c.id === categoryId)
+                const isRenaming = renamingEntryId === entry.id
+                return (
+                  <div
+                    key={entry.id}
+                    className={`entry-item ${selectedEntryId === entry.id ? 'active' : ''}`}
+                    onClick={() => !isRenaming && handleSelectRecentEntry(result)}
                     onDoubleClick={() => startRenameEntry(entry.id)}
                     onContextMenu={(e) => openEntryContextMenu(e, entry.id)}
                   >
@@ -681,7 +877,7 @@ export default function App() {
                 <div className="entry-empty">暂无条目</div>
               ) : (
                 categoryEntries.map((entry) => {
-                  const children = sortByPin(entry.children || [])
+                  const children = sortEntries(entry.children || [], sortOrder)
                   const isExpanded = expandedEntryIds.has(entry.id)
                   const hasChildren = children.length > 0
                   const isRenaming = renamingEntryId === entry.id

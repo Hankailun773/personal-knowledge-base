@@ -6,6 +6,14 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import { Highlight } from '@tiptap/extension-highlight'
 import { useEffect, useState } from 'react'
 
+function countWords(text) {
+  const zhRe = /[一-龥]/g
+  const chineseChars = (text.match(zhRe) || []).length
+  const withoutChinese = text.replace(/[一-龥]/g, ' ')
+  const englishWords = (withoutChinese.match(/[a-zA-Z0-9]+/g) || []).length
+  return { chars: chineseChars, words: englishWords }
+}
+
 const TEXT_COLORS = [
   { label: '默认',  value: null },
   { label: '红色',  value: '#e03e3e' },
@@ -42,6 +50,8 @@ export default function RichEditor({ content, editable, onChange }) {
   }, [editor, editable])
 
   const currentColor = editor?.getAttributes('textStyle')?.color ?? null
+
+  const stats = editor ? countWords(editor.getText()) : { chars: 0, words: 0 }
 
   const cmd = (fn) => (e) => { e.preventDefault(); fn() }
 
@@ -134,6 +144,12 @@ export default function RichEditor({ content, editable, onChange }) {
         <div className="tiptap-placeholder">暂无内容，切换到编辑模式开始写作</div>
       ) : (
         <EditorContent editor={editor} className="tiptap-content" />
+      )}
+
+      {editor && (
+        <div className="word-count-bar">
+          {stats.chars} 字 · {stats.words} 词
+        </div>
       )}
     </div>
   )
