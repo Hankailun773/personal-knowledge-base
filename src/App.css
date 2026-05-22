@@ -531,6 +531,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .toolbar {
@@ -1173,3 +1174,94 @@ body.dark .tag-section-count { color: #555; }
 
 body.dark .search-preview { color: #666; }
 body.dark .search-highlight { color: #c8c8c8; }
+
+/* ══════════════════════════════
+   条目内链
+══════════════════════════════ */
+.internal-link {
+  color: #0b6e99;
+  font-weight: 500;
+  border-radius: 3px;
+  padding: 0 2px;
+  background: rgba(11, 110, 153, 0.06);
+  transition: background 0.1s;
+}
+
+/* 预览模式下可点击 */
+.detail-body:not(.edit-mode) .internal-link {
+  cursor: pointer;
+}
+.detail-body:not(.edit-mode) .internal-link:hover {
+  background: rgba(11, 110, 153, 0.15);
+}
+
+/* 内链浮层 */
+.link-popup {
+  position: absolute;
+  z-index: 300;
+  background: #ffffff;
+  border: 1px solid #e3e2df;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  min-width: 200px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.link-popup-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: #37352f;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+.link-popup-item:hover { background: #f7f7f5; }
+.link-popup-item-active { background: #e8f4fb !important; color: #0b6e99; }
+
+.link-popup-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.link-popup-path {
+  font-size: 11px;
+  color: #9b9a97;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+body.dark .link-popup-path { color: #666; }
+body.dark .link-popup-item-active .link-popup-path { color: #4a7fa5; }
+
+.link-popup-empty {
+  padding: 8px 10px;
+  color: #9b9a97;
+  font-size: 12px;
+}
+
+body.dark .internal-link { color: #64b5f6; background: rgba(100, 181, 246, 0.08); }
+body.dark .detail-body:not(.edit-mode) .internal-link:hover { background: rgba(100, 181, 246, 0.18); }
+body.dark .link-popup {
+  background: #2d2d2d;
+  border-color: #3a3a3a;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+body.dark .link-popup-item { color: #e0e0e0; }
+body.dark .link-popup-item:hover { background: #3a3a3a; }
+body.dark .link-popup-item-active { background: #1a3a5c !important; color: #64b5f6; }
+body.dark .link-popup-empty { color: #666; }

@@ -46,6 +46,17 @@ const SORT_OPTIONS = [
   { key: 'title',   label: '标题 A→Z' },
 ]
 
+function resolveInternalLinks(html, flatEntries) {
+  if (!html || !html.includes('data-internal-link')) return html
+  return html.replace(
+    /<span([^>]*?)data-entry-id="([^"]*)"([^>]*)>\[\[.*?\]\]<\/span>/g,
+    (match, pre, id, post) => {
+      const entry = flatEntries.find(e => e.id === id)
+      return entry ? `<span${pre}data-entry-id="${id}"${post}>[[${entry.title}]]</span>` : match
+    }
+  )
+}
+
 function stripHtml(html) {
   if (!html) return ''
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -239,7 +250,8 @@ export default function App() {
     }
     if (found) {
       setEditTitle(found.title)
-      setEditContent(found.content || '')
+      const flatEntries = dataRef.current.entries.flatMap(e => [e, ...(e.children || [])])
+      setEditContent(resolveInternalLinks(found.content || '', flatEntries))
       setViewMode('preview')
       setIsDirty(false)
     }
@@ -603,6 +615,17 @@ export default function App() {
     if (parent) expandEntry(parent.id)
     applyEntrySwitch(entry.id, entry.content || '', entry.title || '')
     setShowRecent(false)
+  }
+
+  function handleNavigateToEntry(id) {
+    const result = allSearchable.find(({ entry }) => entry.id === id)
+    if (!result) return
+    flushSave()
+    setSelectedCatId(result.categoryId)
+    setShowRecent(false)
+    setShowTags(false)
+    if (result.parent) expandEntry(result.parent.id)
+    applyEntrySwitch(result.entry.id, result.entry.content || '', result.entry.title || '')
   }
 
   function handleSelectTagEntry({ entry, parent, categoryId }) {
@@ -1255,6 +1278,27 @@ export default function App() {
                   setIsDirty(true)
                   setSaveStatus(null)
                 }}
+                getEntries={() => {
+                  const flat = []
+                  const cats = dataRef.current.categories
+                  for (const e of dataRef.current.entries) {
+                    const catName = cats.find(c => c.id === e.categoryId)?.name || ''
+                    if (e.id !== selectedEntryId) flat.push({
+                      id: e.id, title: e.title,
+                      path: catName,
+                      updatedAt: e.updatedAt || 0,
+                    })
+                    for (const c of (e.children || [])) {
+                      if (c.id !== selectedEntryId) flat.push({
+                        id: c.id, title: c.title,
+                        path: catName ? `${catName} / ${e.title}` : e.title,
+                        updatedAt: c.updatedAt || 0,
+                      })
+                    }
+                  }
+                  return flat
+                }}
+                onNavigate={handleNavigateToEntry}
               />
             </div>
           </>
