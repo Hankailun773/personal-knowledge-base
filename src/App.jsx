@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import RichEditor from './RichEditor.jsx'
 import './App.css'
 
 function formatDate(isoString) {
@@ -769,22 +768,12 @@ export default function App() {
             </div>
 
             <div className={`detail-body ${viewMode === 'edit' ? 'edit-mode' : ''}`}>
-              {viewMode === 'edit' ? (
-                <textarea
-                  className="detail-editor"
-                  value={editContent}
-                  onChange={(e) => { setEditContent(e.target.value); setIsDirty(true) }}
-                  placeholder="用 Markdown 格式写点什么..."
-                />
-              ) : (
-                <div className="detail-preview">
-                  {editContent ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{editContent}</ReactMarkdown>
-                  ) : (
-                    <p className="preview-empty">暂无内容，点击右上角「编辑」开始写作</p>
-                  )}
-                </div>
-              )}
+              <RichEditor
+                key={selectedEntryId}
+                content={editContent}
+                editable={viewMode === 'edit'}
+                onChange={(html) => { setEditContent(html); setIsDirty(true) }}
+              />
             </div>
           </>
         ) : (
