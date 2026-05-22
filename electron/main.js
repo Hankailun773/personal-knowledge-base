@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -88,6 +88,33 @@ ipcMain.handle('get-data', () => readData())
 ipcMain.handle('save-data', (_, data) => {
   writeData(data)
   return true
+})
+ipcMain.handle('export-pdf', async (event, { title }) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: '导出 PDF',
+    defaultPath: `${title}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (canceled || !filePath) return { success: false }
+  const pdfBuffer = await event.sender.printToPDF({
+    pageSize: 'A4',
+    printBackground: true,
+  })
+  fs.writeFileSync(filePath, pdfBuffer)
+  return { success: true }
+})
+
+ipcMain.handle('export-markdown', async (event, { title, markdown }) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: '导出 Markdown',
+    defaultPath: `${title}.md`,
+    filters: [{ name: 'Markdown', extensions: ['md'] }],
+  })
+  if (canceled || !filePath) return { success: false }
+  fs.writeFileSync(filePath, markdown, 'utf-8')
+  return { success: true }
 })
 
 app.whenReady().then(() => {

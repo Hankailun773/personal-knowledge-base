@@ -1265,3 +1265,61 @@ body.dark .link-popup-item { color: #e0e0e0; }
 body.dark .link-popup-item:hover { background: #3a3a3a; }
 body.dark .link-popup-item-active { background: #1a3a5c !important; color: #64b5f6; }
 body.dark .link-popup-empty { color: #666; }
+
+/* ── 导出菜单 ── */
+.export-menu-wrap {
+  position: relative;
+}
+
+.export-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 101;
+  background: #ffffff;
+  border: 1px solid #e3e2df;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  min-width: 150px;
+  user-select: none;
+}
+
+body.dark .export-dropdown {
+  background: #2d2d2d;
+  border-color: #3a3a3a;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* ── 导出按钮 ── */
+.export-btn {
+  padding: 3px 8px;
+  border: 1px solid #d3d2cf;
+  border-radius: 4px;
+  background: none;
+  color: #6b6b6b;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.export-btn:hover { background: #f0f0ee; border-color: #b8b7b3; color: #37352f; }
+
+body.dark .export-btn { border-color: #444; color: #888; }
+body.dark .export-btn:hover { background: #333; border-color: #555; color: #e0e0e0; }
+
+/* ── 打印 / PDF 导出：只保留正文内容区域 ── */
+@media print {
+  .sidebar,
+  .panel-entries { display: none !important; }
+  .panel-detail { width: 100% !important; }
+  .breadcrumb,
+  .detail-actions,
+  .tag-row,
+  .toolbar,
+  .word-count-bar,
+  .link-popup { display: none !important; }
+  .detail-body,
+  .rich-editor-wrapper,
+  .tiptap-content { overflow: visible !important; }
+}

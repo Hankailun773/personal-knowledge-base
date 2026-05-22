@@ -46,6 +46,41 @@ const SORT_OPTIONS = [
   { key: 'title',   label: '标题 A→Z' },
 ]
 
+function htmlToMarkdown(html) {
+  if (!html) return ''
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  function walk(node) {
+    if (node.nodeType === 3) return node.textContent
+    if (node.nodeType !== 1) return ''
+    const tag = node.tagName.toLowerCase()
+    const kids = [...node.childNodes].map(walk).join('')
+    switch (tag) {
+      case 'h1': return `# ${kids.trim()}\n\n`
+      case 'h2': return `## ${kids.trim()}\n\n`
+      case 'p': {
+        const parent = node.parentElement?.tagName.toLowerCase()
+        return parent === 'li' ? kids : `${kids}\n\n`
+      }
+      case 'strong': case 'b': return `**${kids}**`
+      case 'em': case 'i': return `*${kids}*`
+      case 'ul': return `${kids}\n`
+      case 'ol': return `${kids}\n`
+      case 'li': {
+        const isOrdered = node.parentElement?.tagName.toLowerCase() === 'ol'
+        if (isOrdered) {
+          const idx = [...(node.parentElement?.children || [])].indexOf(node) + 1
+          return `${idx}. ${kids.trim()}\n`
+        }
+        return `- ${kids.trim()}\n`
+      }
+      case 'hr': return `---\n\n`
+      case 'br': return '\n'
+      default: return kids
+    }
+  }
+  return walk(doc.body).replace(/\n{3,}/g, '\n\n').trim()
+}
+
 function resolveInternalLinks(html, flatEntries) {
   if (!html || !html.includes('data-internal-link')) return html
   return html.replace(
@@ -142,6 +177,9 @@ export default function App() {
   const savedMsgTimerRef = useRef(null)
   const [pendingContent, setPendingContent] = useState(null) // null = 无待保存内容
   const [saveStatus, setSaveStatus] = useState(null) // null | 'saved'
+  const [exportStatus, setExportStatus] = useState(null) // null | 'done'
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportTimerRef = useRef(null)
 
   useEffect(() => {
     window.electronAPI.getData().then((d) => {
@@ -568,6 +606,28 @@ export default function App() {
     setSaveStatus('saved')
     clearTimeout(savedMsgTimerRef.current)
     savedMsgTimerRef.current = setTimeout(() => setSaveStatus(null), 2000)
+  }
+
+  async function handleExport() {
+    if (!selectedEntry) return
+    const content = pendingContent !== null ? pendingContent : editContent
+    const md = `# ${editTitle}\n\n${htmlToMarkdown(content)}`
+    const result = await window.electronAPI.exportMarkdown(editTitle, md)
+    if (result?.success) {
+      setExportStatus('done')
+      clearTimeout(exportTimerRef.current)
+      exportTimerRef.current = setTimeout(() => setExportStatus(null), 2000)
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!selectedEntry) return
+    const result = await window.electronAPI.exportPDF(editTitle)
+    if (result?.success) {
+      setExportStatus('done')
+      clearTimeout(exportTimerRef.current)
+      exportTimerRef.current = setTimeout(() => setExportStatus(null), 2000)
+    }
   }
 
   // ── Derived ──
@@ -1215,6 +1275,21 @@ export default function App() {
                   {!isDirty && saveStatus === 'saved' && (
                     <span className="save-status">已保存</span>
                   )}
+                  {exportStatus === 'done' && (
+                    <span className="save-status">已导出</span>
+                  )}
+                  <div className="export-menu-wrap">
+                    <button className="export-btn" onClick={() => setShowExportMenu(v => !v)}>导出</button>
+                    {showExportMenu && (
+                      <>
+                        <div className="ctx-overlay" onClick={() => setShowExportMenu(false)} />
+                        <div className="export-dropdown">
+                          <button className="ctx-item" onClick={() => { setShowExportMenu(false); handleExport() }}>导出为 Markdown</button>
+                          <button className="ctx-item" onClick={() => { setShowExportMenu(false); handleExportPDF() }}>导出为 PDF</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <div className="mode-toggle">
                     <button
                       className={`mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
