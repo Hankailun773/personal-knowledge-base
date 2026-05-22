@@ -20,6 +20,11 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState('')
 
+  const [renamingCatId, setRenamingCatId] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef(null)
+  const [contextMenu, setContextMenu] = useState(null) // { catId, x, y }
+
   const [isAddingCat, setIsAddingCat] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const catInputRef = useRef(null)
@@ -28,12 +33,20 @@ export default function App() {
   const [newEntryTitle, setNewEntryTitle] = useState('')
   const entryInputRef = useRef(null)
 
+  // 条目列表重命名
+  const [renamingEntryId, setRenamingEntryId] = useState(null)
+  const [renameEntryValue, setRenameEntryValue] = useState('')
+  const renameEntryInputRef = useRef(null)
+  const [entryContextMenu, setEntryContextMenu] = useState(null) // { id, x, y }
+
   // 详情编辑状态
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
   const [viewMode, setViewMode] = useState('preview') // 'preview' | 'edit'
   const [isDirty, setIsDirty] = useState(false)
   const titleInputRef = useRef(null)
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
 
   useEffect(() => {
     window.electronAPI.getData().then((d) => {
@@ -47,11 +60,34 @@ export default function App() {
   }, [isAddingCat])
 
   useEffect(() => {
+    if (renamingCatId) {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    }
+  }, [renamingCatId])
+
+  useEffect(() => {
     if (isAddingEntry) entryInputRef.current?.focus()
   }, [isAddingEntry])
 
+  useEffect(() => {
+    if (renamingEntryId) {
+      renameEntryInputRef.current?.focus()
+      renameEntryInputRef.current?.select()
+    }
+  }, [renamingEntryId])
+
+  useEffect(() => {
+    if (isEditingTitle) {
+      titleInputRef.current?.focus()
+      titleInputRef.current?.select()
+    }
+  }, [isEditingTitle])
+
   // 切换条目时加载内容
   useEffect(() => {
+    setIsEditingTitle(false)
+    setTitleDraft('')
     if (!selectedEntryId) {
       setEditTitle('')
       setEditContent('')
@@ -78,6 +114,39 @@ export default function App() {
     return window.confirm('有未保存的修改，确定要离开吗？')
   }
 
+  // ── 分类重命名 ──
+  function startRename(catId) {
+    const cat = data.categories.find((c) => c.id === catId)
+    if (!cat) return
+    setRenamingCatId(catId)
+    setRenameValue(cat.name)
+  }
+
+  function commitRename() {
+    const name = renameValue.trim()
+    if (name && renamingCatId) {
+      const nextCats = data.categories.map((c) => c.id === renamingCatId ? { ...c, name } : c)
+      saveData({ ...data, categories: nextCats })
+    }
+    setRenamingCatId(null)
+    setRenameValue('')
+  }
+
+  function cancelRename() {
+    setRenamingCatId(null)
+    setRenameValue('')
+  }
+
+  function openContextMenu(e, catId) {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ catId, x: e.clientX, y: e.clientY })
+  }
+
+  function closeContextMenu() {
+    setContextMenu(null)
+  }
+
   // ── 分类操作 ──
   function handleSelectCategory(id) {
     if (id === selectedCatId) return
@@ -97,7 +166,8 @@ export default function App() {
 
   function handleDeleteCategory(id) {
     if (data.categories.length <= 1) return
-    if (id === selectedCatId && !checkUnsaved()) return
+    const cat = data.categories.find((c) => c.id === id)
+    if (!window.confirm(`确定要删除「${cat?.name}」及其所有条目吗？此操作不可撤销。`)) return
     const nextCats = data.categories.filter((c) => c.id !== id)
     const nextEntries = data.entries.filter((e) => e.categoryId !== id)
     saveData({ categories: nextCats, entries: nextEntries })
@@ -125,6 +195,8 @@ export default function App() {
       title,
       content: '',
       createdAt: new Date().toISOString(),
+      pinned: false,
+      pinnedAt: null,
     }
     saveData({ ...data, entries: [...data.entries, newEntry] })
     setSelectedEntryId(newEntry.id)
@@ -133,7 +205,8 @@ export default function App() {
   }
 
   function handleDeleteEntry(id) {
-    if (id === selectedEntryId && !checkUnsaved()) return
+    const entry = data.entries.find((e) => e.id === id)
+    if (!window.confirm(`确定要删除「${entry?.title}」吗？此操作不可撤销。`)) return
     const nextEntries = data.entries.filter((e) => e.id !== id)
     saveData({ ...data, entries: nextEntries })
     if (selectedEntryId === id) {
@@ -150,27 +223,93 @@ export default function App() {
     setSearchQuery('')
   }
 
+  // ── 条目列表重命名 ──
+  function startRenameEntry(entryId) {
+    const entry = data.entries.find((e) => e.id === entryId)
+    if (!entry) return
+    setRenamingEntryId(entryId)
+    setRenameEntryValue(entry.title)
+  }
+
+  function commitRenameEntry() {
+    const title = renameEntryValue.trim()
+    if (title && renamingEntryId) {
+      const nextEntries = data.entries.map((e) =>
+        e.id === renamingEntryId ? { ...e, title } : e
+      )
+      saveData({ ...data, entries: nextEntries })
+      if (renamingEntryId === selectedEntryId) setEditTitle(title)
+    }
+    setRenamingEntryId(null)
+    setRenameEntryValue('')
+  }
+
+  function cancelRenameEntry() {
+    setRenamingEntryId(null)
+    setRenameEntryValue('')
+  }
+
+  function openEntryContextMenu(e, entryId) {
+    e.preventDefault()
+    e.stopPropagation()
+    setEntryContextMenu({ id: entryId, x: e.clientX, y: e.clientY })
+  }
+
+  // ── 详情标题独立编辑 ──
+  function startTitleEdit() {
+    setTitleDraft(editTitle)
+    setIsEditingTitle(true)
+  }
+
+  function commitTitleEdit() {
+    const title = titleDraft.trim()
+    if (title && selectedEntryId) {
+      const nextEntries = data.entries.map((e) =>
+        e.id === selectedEntryId ? { ...e, title } : e
+      )
+      saveData({ ...data, entries: nextEntries })
+      setEditTitle(title)
+    }
+    setIsEditingTitle(false)
+    setTitleDraft('')
+  }
+
+  function cancelTitleEdit() {
+    setIsEditingTitle(false)
+    setTitleDraft('')
+  }
+
+  function handleTogglePin(entryId) {
+    const entry = data.entries.find((e) => e.id === entryId)
+    if (!entry) return
+    const nextEntries = data.entries.map((e) =>
+      e.id === entryId
+        ? { ...e, pinned: !e.pinned, pinnedAt: !e.pinned ? Date.now() : null }
+        : e
+    )
+    saveData({ ...data, entries: nextEntries })
+  }
+
   // ── 详情操作 ──
   function handleSave() {
-    const title = editTitle.trim()
     const nextEntries = data.entries.map((e) =>
-      e.id === selectedEntryId ? { ...e, title: title || e.title, content: editContent } : e
+      e.id === selectedEntryId ? { ...e, title: editTitle || e.title, content: editContent } : e
     )
     saveData({ ...data, entries: nextEntries })
     setIsDirty(false)
   }
 
-  function handleTitleClick() {
-    if (viewMode === 'preview') {
-      setViewMode('edit')
-      setTimeout(() => titleInputRef.current?.focus(), 0)
-    }
-  }
-
   // ── Derived ──
   const { categories, entries: allEntries } = data
   const selectedCategory = categories.find((c) => c.id === selectedCatId)
-  const categoryEntries = allEntries.filter((e) => e.categoryId === selectedCatId)
+  const categoryEntries = allEntries
+    .filter((e) => e.categoryId === selectedCatId)
+    .sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      if (a.pinned && b.pinned) return (b.pinnedAt || 0) - (a.pinnedAt || 0)
+      return 0
+    })
   const selectedEntry = allEntries.find((e) => e.id === selectedEntryId)
   const isSearching = searchQuery.trim().length > 0
   const searchResults = isSearching
@@ -207,15 +346,35 @@ export default function App() {
             <div
               key={cat.id}
               className={`category-item ${selectedCatId === cat.id ? 'active' : ''}`}
-              onClick={() => handleSelectCategory(cat.id)}
+              onClick={() => renamingCatId !== cat.id && handleSelectCategory(cat.id)}
+              onDoubleClick={() => startRename(cat.id)}
+              onContextMenu={(e) => openContextMenu(e, cat.id)}
             >
-              <span className="category-name">{cat.name}</span>
-              {categories.length > 1 && (
-                <button
-                  className="delete-btn"
-                  onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id) }}
-                  title="删除分类"
-                >×</button>
+              {renamingCatId === cat.id ? (
+                <input
+                  ref={renameInputRef}
+                  className="rename-input"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename()
+                    if (e.key === 'Escape') cancelRename()
+                  }}
+                  onBlur={commitRename}
+                  onClick={(e) => e.stopPropagation()}
+                  maxLength={20}
+                />
+              ) : (
+                <>
+                  <span className="category-name">{cat.name}</span>
+                  {categories.length > 1 && (
+                    <button
+                      className="delete-btn"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id) }}
+                      title="删除分类"
+                    >×</button>
+                  )}
+                </>
               )}
             </div>
           ))}
@@ -268,12 +427,37 @@ export default function App() {
                   <div
                     key={entry.id}
                     className={`entry-item ${selectedEntryId === entry.id ? 'active' : ''}`}
-                    onClick={() => handleSelectSearchResult(entry)}
+                    onClick={() => renamingEntryId !== entry.id && handleSelectSearchResult(entry)}
+                    onDoubleClick={() => startRenameEntry(entry.id)}
+                    onContextMenu={(e) => openEntryContextMenu(e, entry.id)}
                   >
-                    <div className="entry-info">
-                      <span className="entry-title">{entry.title}</span>
-                      <span className="entry-time">{cat?.name || ''}</span>
-                    </div>
+                    {renamingEntryId === entry.id ? (
+                      <input
+                        ref={renameEntryInputRef}
+                        className="rename-input"
+                        value={renameEntryValue}
+                        onChange={(e) => setRenameEntryValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRenameEntry()
+                          if (e.key === 'Escape') cancelRenameEntry()
+                        }}
+                        onBlur={commitRenameEntry}
+                        onClick={(e) => e.stopPropagation()}
+                        maxLength={100}
+                      />
+                    ) : (
+                      <>
+                        <div className="entry-info">
+                          <span className="entry-title">{entry.title}</span>
+                          <span className="entry-time">{cat?.name || ''}</span>
+                        </div>
+                        <button
+                          className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); handleTogglePin(entry.id) }}
+                          title={entry.pinned ? '取消置顶' : '置顶'}
+                        >{entry.pinned ? '★' : '☆'}</button>
+                      </>
+                    )}
                   </div>
                 )
               })
@@ -304,17 +488,42 @@ export default function App() {
                   <div
                     key={entry.id}
                     className={`entry-item ${selectedEntryId === entry.id ? 'active' : ''}`}
-                    onClick={() => handleSelectEntry(entry.id)}
+                    onClick={() => renamingEntryId !== entry.id && handleSelectEntry(entry.id)}
+                    onDoubleClick={() => startRenameEntry(entry.id)}
+                    onContextMenu={(e) => openEntryContextMenu(e, entry.id)}
                   >
-                    <div className="entry-info">
-                      <span className="entry-title">{entry.title}</span>
-                      <span className="entry-time">{formatDate(entry.createdAt)}</span>
-                    </div>
-                    <button
-                      className="entry-delete-btn"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteEntry(entry.id) }}
-                      title="删除条目"
-                    >×</button>
+                    {renamingEntryId === entry.id ? (
+                      <input
+                        ref={renameEntryInputRef}
+                        className="rename-input"
+                        value={renameEntryValue}
+                        onChange={(e) => setRenameEntryValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRenameEntry()
+                          if (e.key === 'Escape') cancelRenameEntry()
+                        }}
+                        onBlur={commitRenameEntry}
+                        onClick={(e) => e.stopPropagation()}
+                        maxLength={100}
+                      />
+                    ) : (
+                      <>
+                        <div className="entry-info">
+                          <span className="entry-title">{entry.title}</span>
+                          <span className="entry-time">{formatDate(entry.createdAt)}</span>
+                        </div>
+                        <button
+                          className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); handleTogglePin(entry.id) }}
+                          title={entry.pinned ? '取消置顶' : '置顶'}
+                        >{entry.pinned ? '★' : '☆'}</button>
+                        <button
+                          className="entry-delete-btn"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteEntry(entry.id) }}
+                          title="删除条目"
+                        >×</button>
+                      </>
+                    )}
                   </div>
                 ))
               )}
@@ -328,16 +537,21 @@ export default function App() {
         {selectedEntry ? (
           <>
             <div className="detail-header">
-              {viewMode === 'edit' ? (
+              {isEditingTitle ? (
                 <input
                   ref={titleInputRef}
                   className="detail-title-input"
-                  value={editTitle}
-                  onChange={(e) => { setEditTitle(e.target.value); setIsDirty(true) }}
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitTitleEdit()
+                    if (e.key === 'Escape') cancelTitleEdit()
+                  }}
+                  onBlur={commitTitleEdit}
                   placeholder="条目标题"
                 />
               ) : (
-                <h1 className="detail-title" onClick={handleTitleClick} title="点击编辑标题">
+                <h1 className="detail-title" onClick={startTitleEdit} title="点击编辑标题">
                   {editTitle}
                 </h1>
               )}
@@ -345,16 +559,20 @@ export default function App() {
                 {isDirty && (
                   <button className="save-btn" onClick={handleSave}>保存</button>
                 )}
-                <button
-                  className="mode-btn"
-                  onClick={() => setViewMode((m) => m === 'preview' ? 'edit' : 'preview')}
-                >
-                  {viewMode === 'preview' ? '编辑' : '预览'}
-                </button>
+                <div className="mode-toggle">
+                  <button
+                    className={`mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
+                    onClick={() => setViewMode('edit')}
+                  >编辑</button>
+                  <button
+                    className={`mode-btn ${viewMode === 'preview' ? 'active' : ''}`}
+                    onClick={() => setViewMode('preview')}
+                  >预览</button>
+                </div>
               </div>
             </div>
 
-            <div className="detail-body">
+            <div className={`detail-body ${viewMode === 'edit' ? 'edit-mode' : ''}`}>
               {viewMode === 'edit' ? (
                 <textarea
                   className="detail-editor"
@@ -379,6 +597,43 @@ export default function App() {
           </div>
         )}
       </div>
+      {entryContextMenu && (
+        <>
+          <div className="ctx-overlay" onClick={() => setEntryContextMenu(null)} />
+          <div className="ctx-menu" style={{ top: entryContextMenu.y, left: entryContextMenu.x }}>
+            <button
+              className="ctx-item"
+              onClick={() => { setEntryContextMenu(null); startRenameEntry(entryContextMenu.id) }}
+            >重命名</button>
+            <button
+              className="ctx-item"
+              onClick={() => { setEntryContextMenu(null); handleTogglePin(entryContextMenu.id) }}
+            >{allEntries.find((e) => e.id === entryContextMenu.id)?.pinned ? '取消置顶' : '置顶'}</button>
+            <button
+              className="ctx-item ctx-item-danger"
+              onClick={() => { setEntryContextMenu(null); handleDeleteEntry(entryContextMenu.id) }}
+            >删除</button>
+          </div>
+        </>
+      )}
+
+      {contextMenu && (
+        <>
+          <div className="ctx-overlay" onClick={closeContextMenu} />
+          <div className="ctx-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+            <button
+              className="ctx-item"
+              onClick={() => { closeContextMenu(); startRename(contextMenu.catId) }}
+            >重命名</button>
+            {categories.length > 1 && (
+              <button
+                className="ctx-item ctx-item-danger"
+                onClick={() => { closeContextMenu(); handleDeleteCategory(contextMenu.catId) }}
+              >删除</button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
