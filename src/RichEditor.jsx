@@ -4,6 +4,7 @@ import { Underline } from '@tiptap/extension-underline'
 import { Color } from '@tiptap/extension-color'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Highlight } from '@tiptap/extension-highlight'
+import { Image } from '@tiptap/extension-image'
 import { Node } from '@tiptap/core'
 import { useEffect, useState, useRef } from 'react'
 
@@ -27,6 +28,19 @@ const TEXT_COLORS = [
 ]
 
 // 内链节点：atom 行内节点，存储 id + label
+const ResizableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: (el) => el.style.width || null,
+        renderHTML: (attrs) => attrs.width ? { style: `width: ${attrs.width}; height: auto;` } : {},
+      },
+    }
+  },
+})
+
 const InternalLink = Node.create({
   name: 'internalLink',
   group: 'inline',
@@ -61,6 +75,14 @@ const InternalLink = Node.create({
   },
 })
 
+function fileToBase64(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => resolve(e.target.result)
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function RichEditor({ content, editable, onChange, getEntries, onNavigate }) {
   const [, setTick] = useState(0)
   const [linkActive, setLinkActive] = useState(false)
@@ -69,6 +91,8 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
   const [popupPos, setPopupPos] = useState({ top: 0, left: 0 })
   const wrapperRef = useRef(null)
   const popupRef = useRef(null)
+  const editorRef = useRef(null)
+  const editableRef = useRef(editable)
 
   const filteredEntries = linkActive
     ? (getEntries?.() || [])
@@ -118,9 +142,41 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
       Color,
       Highlight.configure({ multicolor: false }),
       InternalLink,
+      ResizableImage.configure({ inline: false }),
     ],
     content: content || '',
     editable,
+    editorProps: {
+      handleDrop(view, event, _slice, moved) {
+        if (moved || !editableRef.current) return false
+        const files = event.dataTransfer?.files
+        if (!files?.length) return false
+        const imageFile = Array.from(files).find(f => f.type.startsWith('image/'))
+        if (!imageFile) return false
+        event.preventDefault()
+        fileToBase64(imageFile).then(src => {
+          editorRef.current?.chain().focus().setImage({ src }).run()
+        })
+        return true
+      },
+      handlePaste(view, event) {
+        if (!editableRef.current) return false
+        const items = event.clipboardData?.items
+        if (!items) return false
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile()
+            if (file) {
+              fileToBase64(file).then(src => {
+                editorRef.current?.chain().focus().setImage({ src }).run()
+              })
+              return true
+            }
+          }
+        }
+        return false
+      },
+    },
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML())
       checkLinkTrigger(editor)
@@ -156,9 +212,22 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
     if (!editable) { setLinkActive(false); setLinkQuery('') }
   }, [editor, editable])
 
+  useEffect(() => { editorRef.current = editor }, [editor])
+  useEffect(() => { editableRef.current = editable }, [editable])
+
   const currentColor = editor?.getAttributes('textStyle')?.color ?? null
   const stats = editor ? countWords(editor.getText()) : { chars: 0, words: 0 }
   const cmd = (fn) => (e) => { e.preventDefault(); fn() }
+
+  function getImgPopupPos() {
+    if (!editable || !editor?.isActive('image')) return null
+    const sel = wrapperRef.current?.querySelector('.ProseMirror-selectednode')
+    if (!sel) return null
+    const rect = sel.getBoundingClientRect()
+    const wRect = wrapperRef.current?.getBoundingClientRect()
+    if (!wRect) return null
+    return { top: rect.bottom - wRect.top + 6, left: rect.left - wRect.left }
+  }
 
   return (
     <div
@@ -271,6 +340,24 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
             onMouseDown={cmd(() => editor.chain().focus().setHorizontalRule().run())}
             title="插入分割线"
           >─</button>
+
+          <div className="tb-sep" />
+
+          {/* 图片 */}
+          <button
+            className="tb-btn"
+            onMouseDown={cmd(async () => {
+              const result = await window.electronAPI.pickImage()
+              if (result?.success) editor.chain().focus().setImage({ src: result.src }).run()
+            })}
+            title="插入图片"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1.5" y="2.5" width="11" height="9" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+              <circle cx="4.5" cy="5.5" r="1" fill="currentColor"/>
+              <path d="M1.5 9.5l2.5-2.5 2 2 2.5-3L11.5 12" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"/>
+            </svg>
+          </button>
         </div>
       )}
 
@@ -298,6 +385,26 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
           )}
         </div>
       )}
+
+      {(() => {
+        const imgPos = getImgPopupPos()
+        if (!imgPos) return null
+        const currentWidth = editor.getAttributes('image').width
+        return (
+          <div className="img-resize-popup" style={{ top: imgPos.top, left: imgPos.left }}>
+            {[['25%', '小'], ['50%', '中'], ['100%', '大'], [null, '原始']].map(([w, label]) => (
+              <button
+                key={label}
+                className={`img-resize-btn ${currentWidth === w ? 'img-resize-active' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  editor.chain().focus().updateAttributes('image', { width: w }).run()
+                }}
+              >{label}</button>
+            ))}
+          </div>
+        )
+      })()}
 
       {editor && (
         <div className="word-count-bar">

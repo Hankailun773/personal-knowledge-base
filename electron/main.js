@@ -118,6 +118,21 @@ ipcMain.handle('export-markdown', async (event, { title, markdown }) => {
   return { success: true }
 })
 
+ipcMain.handle('pick-image', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: '选择图片',
+    filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'] }],
+    properties: ['openFile'],
+  })
+  if (canceled || !filePaths[0]) return { success: false }
+  const buffer = fs.readFileSync(filePaths[0])
+  const ext = path.extname(filePaths[0]).slice(1).toLowerCase()
+  const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' }
+  const mime = mimeMap[ext] || 'image/png'
+  return { success: true, src: `data:${mime};base64,${buffer.toString('base64')}` }
+})
+
 app.whenReady().then(() => {
   createWindow()
   app.on('activate', () => {

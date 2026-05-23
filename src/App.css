@@ -703,6 +703,51 @@
   color: #787774;
 }
 
+.tiptap-content .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.tiptap-content .ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid #0b6e99;
+  outline-offset: 2px;
+}
+
+.img-resize-popup {
+  position: absolute;
+  z-index: 50;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: #fff;
+  border: 1px solid #e3e2df;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+.img-resize-btn {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: #37352f;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.img-resize-btn:hover { background: #e3e2df; }
+.img-resize-active { background: #37352f !important; color: #fff; }
+
+body.dark .img-resize-popup { background: #2a2a27; border-color: #3a3a3a; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+body.dark .img-resize-btn { color: #e0e0e0; }
+body.dark .img-resize-btn:hover { background: #3a3a3a; }
+body.dark .img-resize-active { background: #e0e0e0 !important; color: #1e1e1e; }
+
 
 /* ══════════════════════════════
    搜索框

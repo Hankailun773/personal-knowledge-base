@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveData: (data) => ipcRenderer.invoke('save-data', data),
   exportMarkdown: (title, markdown) => ipcRenderer.invoke('export-markdown', { title, markdown }),
   exportPDF: (title) => ipcRenderer.invoke('export-pdf', { title }),
+  pickImage: () => ipcRenderer.invoke('pick-image'),
 })
