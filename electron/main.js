@@ -26,7 +26,8 @@ function normalizeData(data) {
     entries: (data.entries || []).map((e) => ({
       ...e,
       tags: e.tags || [],
-      children: (e.children || []).map((c) => ({ ...c, tags: c.tags || [] })),
+      history: e.history || [],
+      children: (e.children || []).map((c) => ({ ...c, tags: c.tags || [], history: c.history || [] })),
     })),
   }
 }

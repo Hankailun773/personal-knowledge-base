@@ -1308,6 +1308,167 @@ body.dark .export-dropdown {
 body.dark .export-btn { border-color: #444; color: #888; }
 body.dark .export-btn:hover { background: #333; border-color: #555; color: #e0e0e0; }
 
+/* ══════════════════════════════
+   历史版本视图
+══════════════════════════════ */
+.history-btn {
+  padding: 3px 8px;
+  border: 1px solid #d3d2cf;
+  border-radius: 4px;
+  background: none;
+  color: #6b6b6b;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.history-btn:hover { background: #f0f0ee; border-color: #b8b7b3; color: #37352f; }
+.history-btn-active { background: #e8f4fb; border-color: #0b6e99; color: #0b6e99; }
+
+.history-view {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.history-list {
+  width: 33.33%;
+  flex-shrink: 0;
+  border-right: 1px solid #e3e2df;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.history-back-btn {
+  padding: 9px 14px;
+  border: none;
+  border-bottom: 1px solid #e3e2df;
+  background: none;
+  color: #6b6b6b;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+.history-back-btn:hover { background: #f7f7f5; color: #37352f; }
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid #f0f0ee;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+.history-item:hover { background: #f7f7f5; }
+.history-item-active { background: #e8f4fb; }
+
+.history-item-time {
+  font-size: 13px;
+  color: #37352f;
+  line-height: 1.4;
+}
+.history-item-active .history-item-time { color: #0b6e99; }
+
+.history-item-preview {
+  font-size: 11px;
+  color: #9b9a97;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+.history-item-active .history-item-preview { color: #5a9ec0; }
+
+.history-item-count {
+  font-size: 10px;
+  color: #b5b4b1;
+  line-height: 1.4;
+}
+.history-item-active .history-item-count { color: #7ab8d4; }
+
+.history-empty {
+  padding: 20px 14px;
+  color: #9b9a97;
+  font-size: 13px;
+}
+
+.history-preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.history-preview-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 56px;
+}
+
+.history-preview-footer {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  padding: 10px 16px;
+  background: linear-gradient(transparent, #ffffff 40%);
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.history-restore-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #0b6e99;
+  color: #ffffff;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+.history-restore-btn:hover { background: #0a5f86; }
+
+.history-preview-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9b9a97;
+  font-size: 13px;
+}
+
+body.dark .history-btn { border-color: #444; color: #888; }
+body.dark .history-btn:hover { background: #333; border-color: #555; color: #e0e0e0; }
+body.dark .history-btn-active { background: #1a3a5c; border-color: #64b5f6; color: #64b5f6; }
+body.dark .history-list { border-right-color: #3a3a3a; }
+body.dark .history-back-btn { color: #888; border-bottom-color: #3a3a3a; }
+body.dark .history-back-btn:hover { background: #2f2f2f; color: #e0e0e0; }
+body.dark .history-item { border-bottom-color: #2f2f2f; }
+body.dark .history-item:hover { background: #2f2f2f; }
+body.dark .history-item-active { background: #1a3a5c; }
+body.dark .history-item-time { color: #e0e0e0; }
+body.dark .history-item-active .history-item-time { color: #64b5f6; }
+body.dark .history-item-preview { color: #666; }
+body.dark .history-item-active .history-item-preview { color: #4a7fa5; }
+body.dark .history-item-count { color: #555; }
+body.dark .history-item-active .history-item-count { color: #3d6a87; }
+body.dark .history-empty { color: #666; }
+body.dark .history-preview-empty { color: #666; }
+body.dark .history-preview-footer { background: linear-gradient(transparent, #1e1e1e 40%); }
+
 /* ── 打印 / PDF 导出：只保留正文内容区域 ── */
 @media print {
   .sidebar,

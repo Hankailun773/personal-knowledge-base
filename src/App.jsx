@@ -2,6 +2,15 @@ import { useState, useEffect, useRef } from 'react'
 import RichEditor from './RichEditor.jsx'
 import './App.css'
 
+function formatHistoryDate(isoString) {
+  const d = new Date(isoString)
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const h = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${m}/${day} ${h}:${min}`
+}
+
 function formatDate(isoString) {
   const d = new Date(isoString)
   const y = d.getFullYear()
@@ -180,6 +189,9 @@ export default function App() {
   const [exportStatus, setExportStatus] = useState(null) // null | 'done'
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportTimerRef = useRef(null)
+  const [showHistory, setShowHistory] = useState(false)
+  const [selectedHistoryIdx, setSelectedHistoryIdx] = useState(null)
+  const [restoreKey, setRestoreKey] = useState(0)
 
   useEffect(() => {
     window.electronAPI.getData().then((d) => {
@@ -275,6 +287,8 @@ export default function App() {
     setPendingContent(null)
     setIsEditingTitle(false)
     setTitleDraft('')
+    setShowHistory(false)
+    setSelectedHistoryIdx(null)
     if (!selectedEntryId) {
       setEditTitle(''); setEditContent(''); setViewMode('preview'); setIsDirty(false)
       return
@@ -302,11 +316,28 @@ export default function App() {
 
   function performSave(entryId, title, content, currentData) {
     const now = Date.now()
+    const savedAt = new Date().toISOString()
     const nextEntries = currentData.entries.map((e) => {
-      if (e.id === entryId) return { ...e, title: title || e.title, content, updatedAt: now }
+      if (e.id === entryId) {
+        const oldContent = e.content || ''
+        const history = oldContent !== content
+          ? [{ content: oldContent, savedAt }, ...(e.history || [])].slice(0, 20)
+          : (e.history || [])
+        return { ...e, title: title || e.title, content, updatedAt: now, history }
+      }
       const children = e.children || []
       if (children.some((c) => c.id === entryId)) {
-        return { ...e, children: children.map((c) => c.id === entryId ? { ...c, title: title || c.title, content, updatedAt: now } : c) }
+        return {
+          ...e,
+          children: children.map((c) => {
+            if (c.id !== entryId) return c
+            const oldContent = c.content || ''
+            const history = oldContent !== content
+              ? [{ content: oldContent, savedAt }, ...(c.history || [])].slice(0, 20)
+              : (c.history || [])
+            return { ...c, title: title || c.title, content, updatedAt: now, history }
+          }),
+        }
       }
       return e
     })
@@ -628,6 +659,16 @@ export default function App() {
       clearTimeout(exportTimerRef.current)
       exportTimerRef.current = setTimeout(() => setExportStatus(null), 2000)
     }
+  }
+
+  function handleRestoreHistory(snapshot) {
+    setEditContent(snapshot.content)
+    setPendingContent(snapshot.content)
+    setIsDirty(true)
+    setSaveStatus(null)
+    setShowHistory(false)
+    setSelectedHistoryIdx(null)
+    setRestoreKey(k => k + 1)
   }
 
   // ── Derived ──
@@ -1278,6 +1319,10 @@ export default function App() {
                   {exportStatus === 'done' && (
                     <span className="save-status">已导出</span>
                   )}
+                  <button
+                    className={`history-btn ${showHistory ? 'history-btn-active' : ''}`}
+                    onClick={() => { setShowHistory(v => !v); setSelectedHistoryIdx(null) }}
+                  >历史</button>
                   <div className="export-menu-wrap">
                     <button className="export-btn" onClick={() => setShowExportMenu(v => !v)}>导出</button>
                     {showExportMenu && (
@@ -1342,9 +1387,61 @@ export default function App() {
               </div>
             </div>
 
+            {showHistory ? (
+              <div className="history-view">
+                <div className="history-list">
+                  <button
+                    className="history-back-btn"
+                    onClick={() => { setShowHistory(false); setSelectedHistoryIdx(null) }}
+                  >← 返回</button>
+                  {(selectedEntry?.history || []).length === 0 ? (
+                    <div className="history-empty">暂无历史版本</div>
+                  ) : (
+                    (selectedEntry?.history || []).map((snap, i) => {
+                      const text = stripHtml(snap.content || '')
+                      const preview = text.length > 20 ? text.slice(0, 20) + '…' : text
+                      const zhCount = (text.match(/[一-龥]/g) || []).length
+                      return (
+                        <button
+                          key={snap.savedAt}
+                          className={`history-item ${selectedHistoryIdx === i ? 'history-item-active' : ''}`}
+                          onClick={() => setSelectedHistoryIdx(i)}
+                        >
+                          <span className="history-item-time">{formatHistoryDate(snap.savedAt)}</span>
+                          {preview && <span className="history-item-preview">{preview}</span>}
+                          <span className="history-item-count">{zhCount} 字</span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+                <div className="history-preview">
+                  {selectedHistoryIdx !== null ? (
+                    <>
+                      <div className="history-preview-content">
+                        <RichEditor
+                          key={(selectedEntry?.history || [])[selectedHistoryIdx]?.savedAt}
+                          content={(selectedEntry?.history || [])[selectedHistoryIdx]?.content || ''}
+                          editable={false}
+                          onChange={() => {}}
+                        />
+                      </div>
+                      <div className="history-preview-footer">
+                        <button
+                          className="history-restore-btn"
+                          onClick={() => handleRestoreHistory((selectedEntry?.history || [])[selectedHistoryIdx])}
+                        >恢复此版本</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="history-preview-empty">选择左侧历史版本查看内容</div>
+                  )}
+                </div>
+              </div>
+            ) : (
             <div className={`detail-body ${viewMode === 'edit' ? 'edit-mode' : ''}`}>
               <RichEditor
-                key={selectedEntryId}
+                key={`${selectedEntryId}-${restoreKey}`}
                 content={editContent}
                 editable={viewMode === 'edit'}
                 onChange={(html) => {
@@ -1376,6 +1473,7 @@ export default function App() {
                 onNavigate={handleNavigateToEntry}
               />
             </div>
+            )}
           </>
         ) : (
           <div className="detail-placeholder">
