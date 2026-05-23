@@ -1,4 +1,4 @@
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import { StarterKit } from '@tiptap/starter-kit'
 import { Underline } from '@tiptap/extension-underline'
 import { Color } from '@tiptap/extension-color'
@@ -27,6 +27,87 @@ const TEXT_COLORS = [
   { label: '灰色',  value: '#787774' },
 ]
 
+function ResizableImageComponent({ node, updateAttributes, selected, editor }) {
+  const [dragWidth, setDragWidth] = useState(null)
+  const dragWidthRef = useRef(null)
+  const startX = useRef(0)
+  const startWidth = useRef(0)
+  const innerRef = useRef(null)
+
+  const editable = editor.isEditable
+  const { src, alt, title, width } = node.attrs
+  const displayWidth = dragWidth ?? width
+
+  function onHandleMouseDown(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    startX.current = e.clientX
+    startWidth.current = innerRef.current?.getBoundingClientRect().width || 300
+
+    function onMouseMove(ev) {
+      const delta = ev.clientX - startX.current
+      const raw = Math.max(50, startWidth.current + delta)
+      const maxW = innerRef.current?.closest('.ProseMirror')?.getBoundingClientRect().width || Infinity
+      const w = `${Math.round(Math.min(raw, maxW))}px`
+      dragWidthRef.current = w
+      setDragWidth(w)
+    }
+
+    function onMouseUp() {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      if (dragWidthRef.current) {
+        updateAttributes({ width: dragWidthRef.current })
+        dragWidthRef.current = null
+        setDragWidth(null)
+      }
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+
+  return (
+    <NodeViewWrapper style={{ display: 'block', margin: '4px 0' }}>
+      <div
+        ref={innerRef}
+        data-img-inner="true"
+        style={{
+          position: 'relative',
+          display: 'inline-block',
+          maxWidth: '100%',
+          lineHeight: 0,
+          borderRadius: '4px',
+          ...(displayWidth ? { width: displayWidth } : {}),
+          ...(editable && selected ? { outline: '2px solid #0b6e99', outlineOffset: '2px' } : {}),
+        }}
+      >
+        <img
+          src={src}
+          alt={alt || ''}
+          title={title || undefined}
+          draggable={false}
+          style={{
+            display: 'block',
+            height: 'auto',
+            borderRadius: '4px',
+            margin: 0,
+            ...(displayWidth ? { width: '100%' } : { maxWidth: '100%' }),
+          }}
+        />
+        {editable && selected && (
+          <>
+            <div className="img-handle img-handle-tl" />
+            <div className="img-handle img-handle-tr" />
+            <div className="img-handle img-handle-bl" />
+            <div className="img-handle img-handle-br" onMouseDown={onHandleMouseDown} />
+          </>
+        )}
+      </div>
+    </NodeViewWrapper>
+  )
+}
+
 // 内链节点：atom 行内节点，存储 id + label
 const ResizableImage = Image.extend({
   addAttributes() {
@@ -38,6 +119,9 @@ const ResizableImage = Image.extend({
         renderHTML: (attrs) => attrs.width ? { style: `width: ${attrs.width}; height: auto;` } : {},
       },
     }
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageComponent)
   },
 })
 
@@ -223,7 +307,8 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
     if (!editable || !editor?.isActive('image')) return null
     const sel = wrapperRef.current?.querySelector('.ProseMirror-selectednode')
     if (!sel) return null
-    const rect = sel.getBoundingClientRect()
+    const inner = sel.querySelector('[data-img-inner]') || sel.querySelector('img') || sel
+    const rect = inner.getBoundingClientRect()
     const wRect = wrapperRef.current?.getBoundingClientRect()
     if (!wRect) return null
     return { top: rect.bottom - wRect.top + 6, left: rect.left - wRect.left }

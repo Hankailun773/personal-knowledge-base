@@ -711,10 +711,21 @@
   margin: 4px 0;
 }
 
-.tiptap-content .ProseMirror img.ProseMirror-selectednode {
-  outline: 2px solid #0b6e99;
-  outline-offset: 2px;
+.img-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #0b6e99;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  z-index: 10;
+  pointer-events: none;
 }
+.img-handle-tl { top: -4px; left: -4px; }
+.img-handle-tr { top: -4px; right: -4px; }
+.img-handle-bl { bottom: -4px; left: -4px; }
+.img-handle-br { bottom: -4px; right: -4px; cursor: nwse-resize; pointer-events: auto; }
+body.dark .img-handle { background: #60b3d7; border-color: #2a2a27; }
 
 .img-resize-popup {
   position: absolute;
