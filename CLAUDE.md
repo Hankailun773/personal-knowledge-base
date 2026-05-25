@@ -10,7 +10,7 @@
 
 - **桌面框架**：Electron 33
 - **前端**：React 18 + Vite 5
-- **富文本编辑器**：Tiptap 3（StarterKit、Underline、Color、TextStyle、Highlight、自定义 InternalLink 节点）
+- **富文本编辑器**：Tiptap 3（StarterKit、Underline、Color、TextStyle、Highlight、自定义 InternalLink 节点、自定义 FontSize 扩展）
 - **样式**：纯 CSS，无 UI 框架
 - **IPC**：contextBridge + ipcMain.handle（preload.js 暴露为 `window.electronAPI`）
 - **数据持久化**：JSON 文件，路径 `app.getPath('userData')/data.json`
@@ -69,6 +69,8 @@ First-cc/
 21. **分类 emoji 图标**：右键分类菜单新增"设置图标"选项，弹出 40 个预设 emoji 选择器（8列网格）；选中后图标显示在分类名前；持久化到 JSON（`categories[].icon` 字段）；`normalizeData()` 中已添加 `icon: ''` 默认值保证旧数据兼容
 22. **上下键切换条目**：条目列表面板（`panel-entries`）监听 ArrowUp/ArrowDown，在当前分类可见条目（含已展开子条目的平铺列表）间导航；切换后自动 `scrollIntoView`；仅在普通分类视图生效，搜索/最近/标签视图不响应；编辑器获得焦点时不抢占
 23. **批量选择**：右键条目菜单"批量选择"进入批量模式，条目左侧出现复选框，顶部操作栏显示已选数量 + 打标签 + 删除 + 取消；批量删除带确认对话框；批量打标签浮层显示全局标签（三态：全选/部分/未选），支持在浮层顶部输入框直接创建新标签并批量添加到选中条目；Esc 或取消按钮退出批量模式；仅普通分类视图生效
+24. **UI 视觉优化**：引入 CSS 变量统一三栏背景色与分隔线（`--col-sidebar-bg/entries-bg/detail-bg/divider`，浅色暖色调 / 深色分层）；引入 Lora 字体变量（`--font-title`），条目大标题 Lora 29px；左侧导航功能项（最近编辑 / 标签）通过 `:nth-child` 视觉降级 + 分隔线；右侧内容区加 `max-width: 780px` 限制
+25. **工具栏字体大小选择器**：自定义 `FontSize` 扩展（基于 `addGlobalAttributes` 挂载到 `textStyle` mark），工具栏 H1/H2 后新增 `<select>` 下拉，选项为小 13px / 标准 15px / 大 17px / 超大 20px；用 `nodesBetween` 遍历选区检测混合字号，混合时显示 `─` 占位符，点击任意选项强制统一应用
 
 ---
 
