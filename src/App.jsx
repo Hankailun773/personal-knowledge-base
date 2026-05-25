@@ -199,6 +199,10 @@ export default function App() {
   const [exportStatus, setExportStatus] = useState(null) // null | 'done'
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportTimerRef = useRef(null)
+  const [batchMode, setBatchMode] = useState(false)
+  const [batchSelectedIds, setBatchSelectedIds] = useState(new Set())
+  const [batchTagPickerOpen, setBatchTagPickerOpen] = useState(false)
+  const [batchTagInput, setBatchTagInput] = useState('')
   const [showHistory, setShowHistory] = useState(false)
   const [selectedHistoryIdx, setSelectedHistoryIdx] = useState(null)
   const [restoreKey, setRestoreKey] = useState(0)
@@ -231,6 +235,10 @@ export default function App() {
   // 全局快捷键（用 ref 包裹 handler，只注册一次监听器）
   const shortcutHandlerRef = useRef(null)
   shortcutHandlerRef.current = (e) => {
+    if (e.key === 'Escape' && batchMode) {
+      exitBatchMode()
+      return
+    }
     if (!e.metaKey) return
     const tag = document.activeElement?.tagName
     const inInput = tag === 'INPUT' || tag === 'TEXTAREA'
@@ -328,6 +336,14 @@ export default function App() {
   useEffect(() => {
     if (selectedEntryId) entryPanelRef.current?.focus()
   }, [selectedEntryId])
+
+  useEffect(() => {
+    if (batchMode && batchSelectedIds.size === 0) setBatchMode(false)
+  }, [batchMode, batchSelectedIds])
+
+  useEffect(() => {
+    if (!batchTagPickerOpen) setBatchTagInput('')
+  }, [batchTagPickerOpen])
 
   function saveData(next) {
     dataRef.current = next
@@ -520,6 +536,7 @@ export default function App() {
   // ── 分类操作 ──
   function handleSelectCategory(id) {
     flushSave()
+    exitBatchMode()
     setSearchQuery('')
     setShowRecent(false)
     setShowTags(false)
@@ -682,6 +699,95 @@ export default function App() {
     }))
   }
 
+  // ── 批量选择 ──
+  function enterBatchMode(entryId) {
+    setBatchMode(true)
+    setBatchSelectedIds(new Set([entryId]))
+    entryPanelRef.current?.focus()
+  }
+
+  function exitBatchMode() {
+    setBatchMode(false)
+    setBatchSelectedIds(new Set())
+    setBatchTagPickerOpen(false)
+  }
+
+  function toggleBatchSelect(entryId) {
+    setBatchSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(entryId)) next.delete(entryId)
+      else next.add(entryId)
+      return next
+    })
+  }
+
+  function handleBatchDelete() {
+    const count = batchSelectedIds.size
+    if (!window.confirm(`确认删除已选的 ${count} 个条目？此操作不可恢复。`)) return
+
+    if (selectedEntryId) {
+      const info = findEntryById(selectedEntryId)
+      if (
+        batchSelectedIds.has(selectedEntryId) ||
+        (info?.parent && batchSelectedIds.has(info.parent.id))
+      ) {
+        clearTimeout(autoSaveTimerRef.current)
+        setSelectedEntryId(null)
+        setIsDirty(false)
+        isDirtyRef.current = false
+        pendingContentRef.current = null
+      }
+    }
+
+    const nextEntries = data.entries
+      .filter((e) => !batchSelectedIds.has(e.id))
+      .map((e) => ({
+        ...e,
+        children: (e.children || []).filter((c) => !batchSelectedIds.has(c.id)),
+      }))
+    saveData({ ...data, entries: nextEntries })
+    exitBatchMode()
+  }
+
+  function handleBatchTagToggle(tag) {
+    const selectedEntries = [...batchSelectedIds].map((id) => findEntryInData(id, data)).filter(Boolean)
+    const allHave = selectedEntries.every((e) => (e.tags || []).includes(tag))
+
+    const updateTags = (entry) => {
+      const tags = entry.tags || []
+      return allHave
+        ? { ...entry, tags: tags.filter((t) => t !== tag) }
+        : { ...entry, tags: tags.includes(tag) ? tags : [...tags, tag] }
+    }
+
+    const nextEntries = data.entries.map((e) => {
+      if (batchSelectedIds.has(e.id)) return updateTags(e)
+      if ((e.children || []).some((c) => batchSelectedIds.has(c.id))) {
+        return { ...e, children: e.children.map((c) => batchSelectedIds.has(c.id) ? updateTags(c) : c) }
+      }
+      return e
+    })
+    saveData({ ...data, entries: nextEntries })
+  }
+
+  function handleBatchAddNewTag(tagName) {
+    const trimmed = tagName.trim()
+    if (!trimmed) return
+    const addTag = (entry) => {
+      const tags = entry.tags || []
+      return tags.includes(trimmed) ? entry : { ...entry, tags: [...tags, trimmed] }
+    }
+    const nextEntries = data.entries.map((e) => {
+      if (batchSelectedIds.has(e.id)) return addTag(e)
+      if ((e.children || []).some((c) => batchSelectedIds.has(c.id))) {
+        return { ...e, children: e.children.map((c) => batchSelectedIds.has(c.id) ? addTag(c) : c) }
+      }
+      return e
+    })
+    saveData({ ...data, entries: nextEntries })
+    setBatchTagInput('')
+  }
+
   // ── 详情保存 ──
   function handleSave() {
     if (!selectedEntryId) return
@@ -814,6 +920,10 @@ export default function App() {
 
   const isSearching = searchQuery.trim().length > 0
 
+  const batchSelectedEntries = batchMode
+    ? [...batchSelectedIds].map((id) => findEntryInData(id, data)).filter(Boolean)
+    : []
+
   // 所有条目的标签汇总去重，用于输入建议
   const allTags = [...new Set(allSearchable.flatMap(({ entry }) => entry.tags || []))]
   const filteredSuggestions = tagInput.trim()
@@ -915,7 +1025,7 @@ export default function App() {
 
   function handleEntryListKeyDown(e) {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-    if (isSearching || showRecent || showTags) return
+    if (batchMode || isSearching || showRecent || showTags) return
     e.preventDefault()
     const visible = []
     for (const entry of categoryEntries) {
@@ -1091,6 +1201,67 @@ export default function App() {
           )}
         </div>
 
+        {!isSearching && !showRecent && !showTags && batchMode && (
+          <div className="batch-bar">
+            <span className="batch-count">已选 {batchSelectedIds.size} 条</span>
+            <div className="batch-tag-wrap">
+              <button
+                className="batch-btn"
+                disabled={batchSelectedIds.size === 0}
+                onClick={() => setBatchTagPickerOpen((v) => !v)}
+              >打标签</button>
+              {batchTagPickerOpen && (
+                <>
+                  <div className="ctx-overlay" onClick={() => setBatchTagPickerOpen(false)} />
+                  <div className="batch-tag-picker">
+                    <div className="batch-tag-input-wrap">
+                      <input
+                        className="batch-tag-input"
+                        value={batchTagInput}
+                        onChange={(e) => setBatchTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleBatchAddNewTag(batchTagInput) }
+                          if (e.key === 'Escape') { e.stopPropagation(); setBatchTagPickerOpen(false) }
+                        }}
+                        placeholder="输入新标签名，回车添加"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="batch-tag-list">
+                      {allTagNames.length === 0 ? (
+                        <div className="batch-tag-empty">暂无标签可选</div>
+                      ) : (
+                        allTagNames.map((tag) => {
+                          const havingCount = batchSelectedEntries.filter((e) => (e.tags || []).includes(tag)).length
+                          const tagState = havingCount === 0 ? 'none' : havingCount === batchSelectedEntries.length ? 'all' : 'some'
+                          return (
+                            <button
+                              key={tag}
+                              className={`batch-tag-item batch-tag-${tagState}`}
+                              onClick={() => handleBatchTagToggle(tag)}
+                            >
+                              <span className="batch-tag-check" />
+                              <span className="batch-tag-name">{tag}</span>
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
+                    <div className="batch-tag-footer">
+                      <button className="batch-tag-done" onClick={() => setBatchTagPickerOpen(false)}>完成</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <button
+              className="batch-btn batch-btn-danger"
+              disabled={batchSelectedIds.size === 0}
+              onClick={handleBatchDelete}
+            >删除</button>
+            <button className="batch-btn" onClick={exitBatchMode}>取消</button>
+          </div>
+        )}
         <div className="entry-list">
           {isSearching ? (
             searchResults.length === 0 ? (
@@ -1261,11 +1432,20 @@ export default function App() {
                     <div key={entry.id}>
                       {/* 一级条目行 */}
                       <div
-                        className={`entry-item ${isSelected ? 'active' : ''}`}
-                        onClick={() => !isRenaming && handleSelectEntry(entry.id)}
-                        onDoubleClick={() => startRenameEntry(entry.id)}
+                        className={`entry-item ${!batchMode && isSelected ? 'active' : ''} ${batchMode && batchSelectedIds.has(entry.id) ? 'batch-checked' : ''}`}
+                        onClick={() => !isRenaming && (batchMode ? toggleBatchSelect(entry.id) : handleSelectEntry(entry.id))}
+                        onDoubleClick={() => !batchMode && startRenameEntry(entry.id)}
                         onContextMenu={(e) => openEntryContextMenu(e, entry.id)}
                       >
+                        {batchMode && (
+                          <input
+                            type="checkbox"
+                            className="batch-checkbox"
+                            checked={batchSelectedIds.has(entry.id)}
+                            onChange={() => {}}
+                            tabIndex={-1}
+                          />
+                        )}
                         <button
                           className={`expand-btn ${!hasChildren ? 'expand-btn-empty' : ''}`}
                           onClick={(e) => { e.stopPropagation(); if (hasChildren) toggleExpand(entry.id) }}
@@ -1293,16 +1473,20 @@ export default function App() {
                               <span className="entry-title">{entry.title}</span>
                               {renderEntryMeta(entry, formatDate(entry.createdAt))}
                             </div>
-                            <button
-                              className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
-                              onClick={(e) => { e.stopPropagation(); handleTogglePin(entry.id) }}
-                              title={entry.pinned ? '取消置顶' : '置顶'}
-                            >{entry.pinned ? '★' : '☆'}</button>
-                            <button
-                              className="entry-delete-btn"
-                              onClick={(e) => { e.stopPropagation(); handleDeleteEntry(entry.id) }}
-                              title="删除条目"
-                            >×</button>
+                            {!batchMode && (
+                              <button
+                                className={`pin-btn ${entry.pinned ? 'is-pinned' : ''}`}
+                                onClick={(e) => { e.stopPropagation(); handleTogglePin(entry.id) }}
+                                title={entry.pinned ? '取消置顶' : '置顶'}
+                              >{entry.pinned ? '★' : '☆'}</button>
+                            )}
+                            {!batchMode && (
+                              <button
+                                className="entry-delete-btn"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteEntry(entry.id) }}
+                                title="删除条目"
+                              >×</button>
+                            )}
                           </>
                         )}
                       </div>
@@ -1314,11 +1498,20 @@ export default function App() {
                         return (
                           <div
                             key={child.id}
-                            className={`entry-item entry-child ${isChildSelected ? 'active' : ''}`}
-                            onClick={() => !isChildRenaming && handleSelectEntry(child.id)}
-                            onDoubleClick={() => startRenameEntry(child.id)}
+                            className={`entry-item entry-child ${!batchMode && isChildSelected ? 'active' : ''} ${batchMode && batchSelectedIds.has(child.id) ? 'batch-checked' : ''}`}
+                            onClick={() => !isChildRenaming && (batchMode ? toggleBatchSelect(child.id) : handleSelectEntry(child.id))}
+                            onDoubleClick={() => !batchMode && startRenameEntry(child.id)}
                             onContextMenu={(e) => openEntryContextMenu(e, child.id)}
                           >
+                            {batchMode && (
+                              <input
+                                type="checkbox"
+                                className="batch-checkbox"
+                                checked={batchSelectedIds.has(child.id)}
+                                onChange={() => {}}
+                                tabIndex={-1}
+                              />
+                            )}
                             {isChildRenaming ? (
                               <input
                                 ref={renameEntryInputRef}
@@ -1339,16 +1532,20 @@ export default function App() {
                                   <span className="entry-title">{child.title}</span>
                                   {renderEntryMeta(child, formatDate(child.createdAt))}
                                 </div>
-                                <button
-                                  className={`pin-btn ${child.pinned ? 'is-pinned' : ''}`}
-                                  onClick={(e) => { e.stopPropagation(); handleTogglePin(child.id) }}
-                                  title={child.pinned ? '取消置顶' : '置顶'}
-                                >{child.pinned ? '★' : '☆'}</button>
-                                <button
-                                  className="entry-delete-btn"
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteEntry(child.id) }}
-                                  title="删除条目"
-                                >×</button>
+                                {!batchMode && (
+                                  <button
+                                    className={`pin-btn ${child.pinned ? 'is-pinned' : ''}`}
+                                    onClick={(e) => { e.stopPropagation(); handleTogglePin(child.id) }}
+                                    title={child.pinned ? '取消置顶' : '置顶'}
+                                  >{child.pinned ? '★' : '☆'}</button>
+                                )}
+                                {!batchMode && (
+                                  <button
+                                    className="entry-delete-btn"
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteEntry(child.id) }}
+                                    title="删除条目"
+                                  >×</button>
+                                )}
                               </>
                             )}
                           </div>
@@ -1579,6 +1776,12 @@ export default function App() {
         <>
           <div className="ctx-overlay" onClick={() => setEntryContextMenu(null)} />
           <div className="ctx-menu" style={{ top: entryContextMenu.y, left: entryContextMenu.x }}>
+            {!isSearching && !showRecent && !showTags && !batchMode && (
+              <button
+                className="ctx-item"
+                onClick={() => { setEntryContextMenu(null); enterBatchMode(entryContextMenu.id) }}
+              >批量选择</button>
+            )}
             <button
               className="ctx-item"
               onClick={() => { setEntryContextMenu(null); startRenameEntry(entryContextMenu.id) }}
