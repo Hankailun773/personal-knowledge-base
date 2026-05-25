@@ -23,6 +23,7 @@ function getDataFilePath() {
 function normalizeData(data) {
   return {
     ...data,
+    categories: (data.categories || []).map((c) => ({ icon: '', ...c })),
     entries: (data.entries || []).map((e) => ({
       ...e,
       tags: e.tags || [],
@@ -87,8 +88,13 @@ function createWindow() {
 
 ipcMain.handle('get-data', () => readData())
 ipcMain.handle('save-data', (_, data) => {
-  writeData(data)
-  return true
+  try {
+    writeData(data)
+    return { success: true }
+  } catch (err) {
+    console.error('[save-data] write error:', err.message)
+    return { success: false, error: err.message }
+  }
 })
 ipcMain.handle('export-pdf', async (event, { title }) => {
   const win = BrowserWindow.fromWebContents(event.sender)

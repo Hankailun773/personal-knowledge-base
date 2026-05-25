@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import RichEditor from './RichEditor.jsx'
 import './App.css'
 
+const EMOJI_LIST = ['📁','📂','🗂️','📝','📖','📚','📒','📔','📕','📗','📘','💡','🔍','⭐','🔖','📌','🎯','🚀','💼','🗒️','✏️','🖊️','📐','🔧','🎨','🎵','🎮','🎬','🌍','🏠','🐱','🐶','🦊','🐼','🐨','🐸','🦋','🌸','🌟','✨']
+
 function formatHistoryDate(isoString) {
   const d = new Date(isoString)
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -90,6 +92,11 @@ function htmlToMarkdown(html) {
   return walk(doc.body).replace(/\n{3,}/g, '\n\n').trim()
 }
 
+function stripBase64(html) {
+  if (!html) return html
+  return html.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, '[图片]')
+}
+
 function resolveInternalLinks(html, flatEntries) {
   if (!html || !html.includes('data-internal-link')) return html
   return html.replace(
@@ -145,6 +152,7 @@ export default function App() {
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef(null)
   const [contextMenu, setContextMenu] = useState(null)
+  const [emojiPicker, setEmojiPicker] = useState(null)
 
   const [isAddingCat, setIsAddingCat] = useState(false)
   const [newCatName, setNewCatName] = useState('')
@@ -178,13 +186,15 @@ export default function App() {
   const [showSortMenu, setShowSortMenu] = useState(false)
 
   const dataRef = useRef(data)
-  dataRef.current = data
   const sortKeyRef = useRef('')
   const sortedIdsRef = useRef([])
   const autoSaveTimerRef = useRef(null)
   const searchInputRef = useRef(null)
+  const entryPanelRef = useRef(null)
   const savedMsgTimerRef = useRef(null)
   const [pendingContent, setPendingContent] = useState(null) // null = 无待保存内容
+  const pendingContentRef = useRef(null)
+  const isDirtyRef = useRef(false)
   const [saveStatus, setSaveStatus] = useState(null) // null | 'saved'
   const [exportStatus, setExportStatus] = useState(null) // null | 'done'
   const [showExportMenu, setShowExportMenu] = useState(false)
@@ -195,6 +205,7 @@ export default function App() {
 
   useEffect(() => {
     window.electronAPI.getData().then((d) => {
+      dataRef.current = d
       setData(d)
       if (d.categories.length > 0) setSelectedCatId(d.categories[0].id)
     })
@@ -270,7 +281,9 @@ export default function App() {
     const timer = setTimeout(() => {
       performSave(id, title, content, dataRef.current)
       setIsDirty(false)
+      isDirtyRef.current = false
       setPendingContent(null)
+      pendingContentRef.current = null
       setSaveStatus('saved')
       clearTimeout(savedMsgTimerRef.current)
       savedMsgTimerRef.current = setTimeout(() => setSaveStatus(null), 2000)
@@ -285,6 +298,7 @@ export default function App() {
   useEffect(() => {
     // 切换条目时：先清空待保存内容（自动取消计时器），再加载新条目
     setPendingContent(null)
+    pendingContentRef.current = null
     setIsEditingTitle(false)
     setTitleDraft('')
     setShowHistory(false)
@@ -295,7 +309,7 @@ export default function App() {
     }
     // 搜索一级和子条目
     let found = null
-    for (const e of data.entries) {
+    for (const e of dataRef.current.entries) {
       if (e.id === selectedEntryId) { found = e; break }
       const child = (e.children || []).find((c) => c.id === selectedEntryId)
       if (child) { found = child; break }
@@ -303,15 +317,22 @@ export default function App() {
     if (found) {
       setEditTitle(found.title)
       const flatEntries = dataRef.current.entries.flatMap(e => [e, ...(e.children || [])])
-      setEditContent(resolveInternalLinks(found.content || '', flatEntries))
+      const resolved = resolveInternalLinks(found.content || '', flatEntries)
+      setEditContent(resolved)
       setViewMode('preview')
       setIsDirty(false)
     }
   }, [selectedEntryId])
 
+  // 条目切换后聚焦列表面板，使上下键导航生效
+  useEffect(() => {
+    if (selectedEntryId) entryPanelRef.current?.focus()
+  }, [selectedEntryId])
+
   function saveData(next) {
+    dataRef.current = next
     setData(next)
-    window.electronAPI.saveData(next)
+    window.electronAPI.saveData(next).catch(err => console.error('[saveData] IPC error:', err))
   }
 
   function performSave(entryId, title, content, currentData) {
@@ -320,9 +341,12 @@ export default function App() {
     const nextEntries = currentData.entries.map((e) => {
       if (e.id === entryId) {
         const oldContent = e.content || ''
+        const cleanHistory = (e.history || []).map(h =>
+          h.content?.includes('data:image/') ? { ...h, content: stripBase64(h.content) } : h
+        )
         const history = oldContent !== content
-          ? [{ content: oldContent, savedAt }, ...(e.history || [])].slice(0, 20)
-          : (e.history || [])
+          ? [{ content: stripBase64(oldContent), savedAt }, ...cleanHistory].slice(0, 20)
+          : cleanHistory
         return { ...e, title: title || e.title, content, updatedAt: now, history }
       }
       const children = e.children || []
@@ -332,9 +356,12 @@ export default function App() {
           children: children.map((c) => {
             if (c.id !== entryId) return c
             const oldContent = c.content || ''
+            const cleanHistory = (c.history || []).map(h =>
+              h.content?.includes('data:image/') ? { ...h, content: stripBase64(h.content) } : h
+            )
             const history = oldContent !== content
-              ? [{ content: oldContent, savedAt }, ...(c.history || [])].slice(0, 20)
-              : (c.history || [])
+              ? [{ content: stripBase64(oldContent), savedAt }, ...cleanHistory].slice(0, 20)
+              : cleanHistory
             return { ...c, title: title || c.title, content, updatedAt: now, history }
           }),
         }
@@ -342,19 +369,36 @@ export default function App() {
       return e
     })
     const next = { ...currentData, entries: nextEntries }
+    dataRef.current = next
     setData(next)
-    window.electronAPI.saveData(next)
+    window.electronAPI.saveData(next).catch(err => console.error('[performSave] IPC error:', err))
     return next
   }
 
   function flushSave() {
-    if (!isDirty || !selectedEntryId) return dataRef.current
+    if (!isDirtyRef.current || !selectedEntryId) return dataRef.current
     clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = null
-    const content = pendingContent !== null ? pendingContent : editContent
+    const content = pendingContentRef.current !== null ? pendingContentRef.current : editContent
     const next = performSave(selectedEntryId, editTitle, content, dataRef.current)
     setIsDirty(false)
+    isDirtyRef.current = false
     setPendingContent(null)
+    pendingContentRef.current = null
+    return next
+  }
+
+  // 切换条目前始终强制保存，不依赖 isDirtyRef，确保图片等大内容不丢失
+  function forceSaveBeforeSwitch() {
+    clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = null
+    if (!selectedEntryId) return dataRef.current
+    const content = pendingContentRef.current !== null ? pendingContentRef.current : editContent
+    const next = performSave(selectedEntryId, editTitle, content, dataRef.current)
+    setIsDirty(false)
+    isDirtyRef.current = false
+    setPendingContent(null)
+    pendingContentRef.current = null
     return next
   }
 
@@ -385,7 +429,9 @@ export default function App() {
     setEditContent(content)
     setEditTitle(title)
     setPendingContent(null)
+    pendingContentRef.current = null
     setIsDirty(false)
+    isDirtyRef.current = false
     setViewMode('preview')
     setSelectedEntryId(id)
     setIsAddingTag(false)
@@ -465,6 +511,12 @@ export default function App() {
 
   function closeContextMenu() { setContextMenu(null) }
 
+  function handleSetCategoryIcon(catId, emoji) {
+    const nextCats = data.categories.map((c) => c.id === catId ? { ...c, icon: emoji } : c)
+    saveData({ ...data, categories: nextCats })
+    setEmojiPicker(null)
+  }
+
   // ── 分类操作 ──
   function handleSelectCategory(id) {
     flushSave()
@@ -497,13 +549,15 @@ export default function App() {
       setSelectedCatId(nextCats[0].id)
       setSelectedEntryId(null)
       setIsDirty(false)
+      isDirtyRef.current = false
+      pendingContentRef.current = null
     }
   }
 
   // ── 条目操作 ──
   function handleSelectEntry(id) {
     if (id === selectedEntryId) return
-    const baseData = flushSave()
+    const baseData = forceSaveBeforeSwitch()
     const found = findEntryInData(id, baseData)
     applyEntrySwitch(id, found?.content || '', found?.title || '')
   }
@@ -543,6 +597,8 @@ export default function App() {
       clearTimeout(autoSaveTimerRef.current)
       setSelectedEntryId(null)
       setIsDirty(false)
+      isDirtyRef.current = false
+      pendingContentRef.current = null
     }
     removeEntry(id)
   }
@@ -570,10 +626,11 @@ export default function App() {
 
   // ── 搜索 ──
   function handleSelectSearchResult({ entry, parent, categoryId }) {
-    flushSave()
+    const baseData = forceSaveBeforeSwitch()
     setSelectedCatId(categoryId)
     if (parent) expandEntry(parent.id)
-    applyEntrySwitch(entry.id, entry.content || '', entry.title || '')
+    const found = findEntryInData(entry.id, baseData)
+    applyEntrySwitch(entry.id, found?.content || '', found?.title || entry.title || '')
     setSearchQuery('')
   }
 
@@ -630,10 +687,12 @@ export default function App() {
     if (!selectedEntryId) return
     clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = null
-    const content = pendingContent !== null ? pendingContent : editContent
+    const content = pendingContentRef.current !== null ? pendingContentRef.current : editContent
     performSave(selectedEntryId, editTitle, content, dataRef.current)
     setIsDirty(false)
+    isDirtyRef.current = false
     setPendingContent(null)
+    pendingContentRef.current = null
     setSaveStatus('saved')
     clearTimeout(savedMsgTimerRef.current)
     savedMsgTimerRef.current = setTimeout(() => setSaveStatus(null), 2000)
@@ -664,7 +723,9 @@ export default function App() {
   function handleRestoreHistory(snapshot) {
     setEditContent(snapshot.content)
     setPendingContent(snapshot.content)
+    pendingContentRef.current = snapshot.content
     setIsDirty(true)
+    isDirtyRef.current = true
     setSaveStatus(null)
     setShowHistory(false)
     setSelectedHistoryIdx(null)
@@ -711,29 +772,32 @@ export default function App() {
     .slice(0, 20)
 
   function handleSelectRecentEntry({ entry, parent, categoryId }) {
-    flushSave()
+    const baseData = forceSaveBeforeSwitch()
     setSelectedCatId(categoryId)
     if (parent) expandEntry(parent.id)
-    applyEntrySwitch(entry.id, entry.content || '', entry.title || '')
+    const found = findEntryInData(entry.id, baseData)
+    applyEntrySwitch(entry.id, found?.content || '', found?.title || entry.title || '')
     setShowRecent(false)
   }
 
   function handleNavigateToEntry(id) {
     const result = allSearchable.find(({ entry }) => entry.id === id)
     if (!result) return
-    flushSave()
+    const baseData = forceSaveBeforeSwitch()
     setSelectedCatId(result.categoryId)
     setShowRecent(false)
     setShowTags(false)
     if (result.parent) expandEntry(result.parent.id)
-    applyEntrySwitch(result.entry.id, result.entry.content || '', result.entry.title || '')
+    const found = findEntryInData(id, baseData)
+    applyEntrySwitch(id, found?.content || '', found?.title || result.entry.title || '')
   }
 
   function handleSelectTagEntry({ entry, parent, categoryId }) {
-    flushSave()
+    const baseData = forceSaveBeforeSwitch()
     setSelectedCatId(categoryId)
     if (parent) expandEntry(parent.id)
-    applyEntrySwitch(entry.id, entry.content || '', entry.title || '')
+    const found = findEntryInData(entry.id, baseData)
+    applyEntrySwitch(entry.id, found?.content || '', found?.title || entry.title || '')
     setShowTags(false)
     setExpandedTagName(null)
   }
@@ -849,6 +913,29 @@ export default function App() {
     )
   }
 
+  function handleEntryListKeyDown(e) {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+    if (isSearching || showRecent || showTags) return
+    e.preventDefault()
+    const visible = []
+    for (const entry of categoryEntries) {
+      visible.push(entry)
+      if (expandedEntryIds.has(entry.id)) {
+        for (const child of sortEntries(entry.children || [], sortOrder)) {
+          visible.push(child)
+        }
+      }
+    }
+    const idx = visible.findIndex((en) => en.id === selectedEntryId)
+    if (idx === -1) return
+    const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1
+    if (nextIdx < 0 || nextIdx >= visible.length) return
+    handleSelectEntry(visible[nextIdx].id)
+    setTimeout(() => {
+      entryPanelRef.current?.querySelector('.entry-item.active')?.scrollIntoView({ block: 'nearest' })
+    }, 0)
+  }
+
   return (
     <div className="app">
       {/* 左侧分类导航 */}
@@ -909,7 +996,7 @@ export default function App() {
                 />
               ) : (
                 <>
-                  <span className="category-name">{cat.name}</span>
+                  <span className="category-name">{cat.icon ? `${cat.icon} ${cat.name}` : cat.name}</span>
                   {categories.length > 1 && (
                     <button
                       className="delete-btn"
@@ -956,7 +1043,7 @@ export default function App() {
       </aside>
 
       {/* 中间条目列表 */}
-      <div className="panel-entries">
+      <div className="panel-entries" ref={entryPanelRef} tabIndex={-1} onKeyDown={handleEntryListKeyDown}>
         <div className="panel-entries-header">
           <span className="panel-entries-title">
             {isSearching
@@ -1159,7 +1246,10 @@ export default function App() {
                 </div>
               )}
               {categoryEntries.length === 0 && !isAddingEntry ? (
-                <div className="entry-empty">暂无条目</div>
+                <div className="entry-empty entry-empty-guide">
+                  <span>还没有条目</span>
+                  <span className="entry-empty-sub">点击上方 + 按钮，新建第一个条目</span>
+                </div>
               ) : (
                 categoryEntries.map((entry) => {
                   const children = sortEntries(entry.children || [], sortOrder)
@@ -1447,7 +1537,9 @@ export default function App() {
                 onChange={(html) => {
                   setEditContent(html)
                   setPendingContent(html)
+                  pendingContentRef.current = html
                   setIsDirty(true)
+                  isDirtyRef.current = true
                   setSaveStatus(null)
                 }}
                 getEntries={() => {
@@ -1516,6 +1608,10 @@ export default function App() {
           <div className="ctx-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
             <button
               className="ctx-item"
+              onClick={() => { const pos = { catId: contextMenu.catId, x: contextMenu.x, y: contextMenu.y }; closeContextMenu(); setEmojiPicker(pos) }}
+            >设置图标</button>
+            <button
+              className="ctx-item"
               onClick={() => { closeContextMenu(); startRename(contextMenu.catId) }}
             >重命名</button>
             {categories.length > 1 && (
@@ -1524,6 +1620,21 @@ export default function App() {
                 onClick={() => { closeContextMenu(); handleDeleteCategory(contextMenu.catId) }}
               >删除</button>
             )}
+          </div>
+        </>
+      )}
+
+      {emojiPicker && (
+        <>
+          <div className="ctx-overlay" onClick={() => setEmojiPicker(null)} />
+          <div className="emoji-picker" style={{ top: emojiPicker.y, left: emojiPicker.x }}>
+            {EMOJI_LIST.map((emoji) => (
+              <button
+                key={emoji}
+                className="emoji-item"
+                onClick={() => handleSetCategoryIcon(emojiPicker.catId, emoji)}
+              >{emoji}</button>
+            ))}
           </div>
         </>
       )}

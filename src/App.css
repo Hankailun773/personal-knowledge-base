@@ -181,6 +181,34 @@
 .ctx-item-danger { color: #d9534f; }
 .ctx-item-danger:hover { background: rgba(217, 83, 79, 0.08); }
 
+.emoji-picker {
+  position: fixed;
+  z-index: 102;
+  background: #ffffff;
+  border: 1px solid #e3e2df;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  width: 232px;
+  user-select: none;
+}
+.emoji-item {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+.emoji-item:hover { background: #f0f0ee; }
+
 /* ══════════════════════════════
    中间条目列表面板
 ══════════════════════════════ */
@@ -195,6 +223,7 @@
   overflow: hidden;
   user-select: none;
 }
+.panel-entries:focus { outline: none; }
 
 .panel-entries-header {
   display: flex;
@@ -367,6 +396,8 @@
   color: #c2c1be;
   text-align: center;
 }
+.entry-empty-guide { flex-direction: column; gap: 6px; }
+.entry-empty-sub { font-size: 11px; color: #b5b4b1; }
 
 /* ══════════════════════════════
    右侧详情面板
@@ -876,6 +907,8 @@ body.dark .ctx-item { color: #e0e0e0; }
 body.dark .ctx-item:hover { background: #3a3a3a; }
 body.dark .ctx-item-danger { color: #f47067; }
 body.dark .ctx-item-danger:hover { background: rgba(217,83,79,0.15); }
+body.dark .emoji-picker { background: #2a2a2a; border-color: #3a3a3a; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+body.dark .emoji-item:hover { background: #3a3a3a; }
 
 /* 中间条目列表 */
 body.dark .panel-entries { background: #252525; border-right-color: #3a3a3a; }
@@ -893,6 +926,7 @@ body.dark .entry-item:hover .pin-btn { color: #888; }
 body.dark .entry-delete-btn { color: #666; }
 body.dark .entry-delete-btn:hover { background: rgba(217,83,79,0.2); color: #f47067; }
 body.dark .entry-empty { color: #555; }
+body.dark .entry-empty-sub { color: #444; }
 body.dark .entry-input {
   background: #2f2f2f; border-color: #4a4a4a; color: #e0e0e0;
 }
@@ -1224,12 +1258,14 @@ body.dark .tag-section-count { color: #555; }
 }
 
 .search-highlight {
-  font-weight: 600;
-  color: #37352f;
+  font-weight: normal;
+  background: #FFE066;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 body.dark .search-preview { color: #666; }
-body.dark .search-highlight { color: #c8c8c8; }
+body.dark .search-highlight { background: #7A6000; color: #FFE066; }
 
 /* ══════════════════════════════
    条目内链
@@ -1237,18 +1273,37 @@ body.dark .search-highlight { color: #c8c8c8; }
 .internal-link {
   color: #0b6e99;
   font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   border-radius: 3px;
-  padding: 0 2px;
+  padding: 0 3px;
   background: rgba(11, 110, 153, 0.06);
   transition: background 0.1s;
+}
+.internal-link::before {
+  content: '';
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 2px;
+  vertical-align: text-bottom;
+  background-color: #0b6e99;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 12 12' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3,9L9,3M6,3H9V6' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 12 12' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3,9L9,3M6,3H9V6' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+.internal-link:hover {
+  background: rgba(11, 110, 153, 0.14);
 }
 
 /* 预览模式下可点击 */
 .detail-body:not(.edit-mode) .internal-link {
   cursor: pointer;
-}
-.detail-body:not(.edit-mode) .internal-link:hover {
-  background: rgba(11, 110, 153, 0.15);
 }
 
 /* 内链浮层 */
@@ -1311,7 +1366,8 @@ body.dark .link-popup-item-active .link-popup-path { color: #4a7fa5; }
 }
 
 body.dark .internal-link { color: #64b5f6; background: rgba(100, 181, 246, 0.08); }
-body.dark .detail-body:not(.edit-mode) .internal-link:hover { background: rgba(100, 181, 246, 0.18); }
+body.dark .internal-link::before { background-color: #64b5f6; }
+body.dark .internal-link:hover { background: rgba(100, 181, 246, 0.18); }
 body.dark .link-popup {
   background: #2d2d2d;
   border-color: #3a3a3a;

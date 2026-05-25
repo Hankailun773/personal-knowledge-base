@@ -1,6 +1,5 @@
 import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import { StarterKit } from '@tiptap/starter-kit'
-import { Underline } from '@tiptap/extension-underline'
 import { Color } from '@tiptap/extension-color'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Highlight } from '@tiptap/extension-highlight'
@@ -155,7 +154,7 @@ const InternalLink = Node.create({
       'data-internal-link': 'true',
       'data-entry-id': node.attrs.id,
       class: 'internal-link',
-    }, `[[${node.attrs.label}]]`]
+    }, node.attrs.label]
   },
 })
 
@@ -221,12 +220,11 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Underline,
       TextStyle,
       Color,
       Highlight.configure({ multicolor: false }),
       InternalLink,
-      ResizableImage.configure({ inline: false }),
+      ResizableImage.configure({ inline: false, allowBase64: true }),
     ],
     content: content || '',
     editable,
@@ -292,7 +290,7 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
 
   useEffect(() => {
     if (!editor) return
-    editor.setEditable(editable)
+    editor.setEditable(editable, false)
     if (!editable) { setLinkActive(false); setLinkQuery('') }
   }, [editor, editable])
 
