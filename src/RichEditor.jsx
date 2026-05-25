@@ -4,7 +4,7 @@ import { Color } from '@tiptap/extension-color'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Highlight } from '@tiptap/extension-highlight'
 import { Image } from '@tiptap/extension-image'
-import { Node } from '@tiptap/core'
+import { Node, Extension } from '@tiptap/core'
 import { useEffect, useState, useRef } from 'react'
 
 function countWords(text) {
@@ -14,6 +14,13 @@ function countWords(text) {
   const englishWords = (withoutChinese.match(/[a-zA-Z0-9]+/g) || []).length
   return { chars: chineseChars, words: englishWords }
 }
+
+const FONT_SIZES = [
+  { label: '小',   value: '13px' },
+  { label: '标准', value: '15px' },
+  { label: '大',   value: '17px' },
+  { label: '超大', value: '20px' },
+]
 
 const TEXT_COLORS = [
   { label: '默认',  value: null },
@@ -158,6 +165,23 @@ const InternalLink = Node.create({
   },
 })
 
+const FontSize = Extension.create({
+  name: 'fontSize',
+  addOptions() { return { types: ['textStyle'] } },
+  addGlobalAttributes() {
+    return [{
+      types: this.options.types,
+      attributes: {
+        fontSize: {
+          default: null,
+          parseHTML: (el) => el.style.fontSize || null,
+          renderHTML: (attrs) => attrs.fontSize ? { style: `font-size: ${attrs.fontSize}` } : {},
+        },
+      },
+    }]
+  },
+})
+
 function fileToBase64(file) {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -222,6 +246,7 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
       StarterKit,
       TextStyle,
       Color,
+      FontSize,
       Highlight.configure({ multicolor: false }),
       InternalLink,
       ResizableImage.configure({ inline: false, allowBase64: true }),
@@ -298,6 +323,20 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
   useEffect(() => { editableRef.current = editable }, [editable])
 
   const currentColor = editor?.getAttributes('textStyle')?.color ?? null
+  const currentFontSize = (() => {
+    if (!editor) return '15px'
+    const { from, to, empty } = editor.state.selection
+    if (empty) return editor.getAttributes('textStyle')?.fontSize ?? '15px'
+    let first, mixed = false
+    editor.state.doc.nodesBetween(from, to, (node) => {
+      if (mixed) return false
+      if (!node.isText) return true
+      const sz = node.marks.find(m => m.type.name === 'textStyle')?.attrs?.fontSize ?? null
+      if (first === undefined) { first = sz } else if (first !== sz) { mixed = true }
+      return true
+    })
+    return mixed ? '' : (first ?? '15px')
+  })()
   const stats = editor ? countWords(editor.getText()) : { chars: 0, words: 0 }
   const cmd = (fn) => (e) => { e.preventDefault(); fn() }
 
@@ -356,6 +395,23 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
             onMouseDown={cmd(() => editor.chain().focus().toggleHeading({ level: 2 }).run())}
             title="小标题"
           >H2</button>
+
+          <div className="tb-sep" />
+
+          {/* 字体大小 */}
+          <select
+            className="tb-select"
+            value={currentFontSize}
+            onChange={(e) => {
+              editor.chain().focus().setMark('textStyle', { fontSize: e.target.value }).run()
+            }}
+            title="字体大小"
+          >
+            <option value="" disabled>─</option>
+            {FONT_SIZES.map(({ label, value }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
 
           <div className="tb-sep" />
 
