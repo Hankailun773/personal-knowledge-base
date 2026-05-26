@@ -30,7 +30,6 @@ body.dark {
   width: 200px;
   flex-shrink: 0;
   background: var(--col-sidebar-bg);
-  border-right: 1px solid var(--col-divider);
   display: flex;
   flex-direction: column;
   padding-top: 44px;
@@ -258,7 +257,6 @@ body.dark {
 .panel-entries {
   width: 240px;
   flex-shrink: 0;
-  border-right: 1px solid var(--col-divider);
   display: flex;
   flex-direction: column;
   padding-top: 44px;
@@ -621,6 +619,34 @@ body.dark {
   color: #9b9a97;
   font-size: 12px;
 }
+
+/* ══════════════════════════════
+   三栏拖拽分隔手柄
+══════════════════════════════ */
+.col-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 10;
+  background: transparent;
+}
+.col-resizer::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--col-divider);
+  transition: left 0.1s, width 0.1s, background 0.1s;
+}
+.col-resizer:hover::after {
+  left: 1px;
+  width: 3px;
+  background: #b0aea8;
+}
+body.dark .col-resizer:hover::after { background: #555; }
 
 /* ══════════════════════════════
    右侧详情面板

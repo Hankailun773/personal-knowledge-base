@@ -183,6 +183,14 @@ export default function App() {
   const [expandedTagName, setExpandedTagName] = useState(null)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true')
   const [sortOrder, setSortOrder] = useState(() => localStorage.getItem('sortOrder') || 'updated')
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const v = parseInt(localStorage.getItem('sidebarWidth'))
+    return isNaN(v) ? 200 : Math.min(280, Math.max(140, v))
+  })
+  const [entriesWidth, setEntriesWidth] = useState(() => {
+    const v = parseInt(localStorage.getItem('entriesWidth'))
+    return isNaN(v) ? 240 : Math.min(400, Math.max(180, v))
+  })
   const [showSortMenu, setShowSortMenu] = useState(false)
 
   const dataRef = useRef(data)
@@ -231,6 +239,38 @@ export default function App() {
     document.body.classList.toggle('dark', darkMode)
     localStorage.setItem('darkMode', String(darkMode))
   }, [darkMode])
+
+  function handleResizerMouseDown(e, which) {
+    e.preventDefault()
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    const startX = e.clientX
+    const startWidth = which === 'sidebar' ? sidebarWidth : entriesWidth
+    let currentWidth = startWidth
+
+    function onMove(ev) {
+      const delta = ev.clientX - startX
+      if (which === 'sidebar') {
+        currentWidth = Math.min(280, Math.max(140, startWidth + delta))
+        setSidebarWidth(currentWidth)
+      } else {
+        currentWidth = Math.min(400, Math.max(180, startWidth + delta))
+        setEntriesWidth(currentWidth)
+      }
+    }
+
+    function onUp() {
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      const key = which === 'sidebar' ? 'sidebarWidth' : 'entriesWidth'
+      localStorage.setItem(key, String(currentWidth))
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   // 全局快捷键（用 ref 包裹 handler，只注册一次监听器）
   const shortcutHandlerRef = useRef(null)
@@ -1049,7 +1089,7 @@ export default function App() {
   return (
     <div className="app">
       {/* 左侧分类导航 */}
-      <aside className="sidebar">
+      <aside className="sidebar" style={{ width: sidebarWidth }}>
         <div className="sidebar-header">
           <span className="sidebar-icon">📚</span>
           <span className="sidebar-title">Kn0wledge</span>
@@ -1151,9 +1191,10 @@ export default function App() {
           )}
         </div>
       </aside>
+      <div className="col-resizer" onMouseDown={(e) => handleResizerMouseDown(e, 'sidebar')} />
 
       {/* 中间条目列表 */}
-      <div className="panel-entries" ref={entryPanelRef} tabIndex={-1} onKeyDown={handleEntryListKeyDown}>
+      <div className="panel-entries" style={{ width: entriesWidth }} ref={entryPanelRef} tabIndex={-1} onKeyDown={handleEntryListKeyDown}>
         <div className="panel-entries-header">
           <span className="panel-entries-title">
             {isSearching
@@ -1559,6 +1600,7 @@ export default function App() {
           )}
         </div>
       </div>
+      <div className="col-resizer" onMouseDown={(e) => handleResizerMouseDown(e, 'entries')} />
 
       {/* 右侧详情面板 */}
       <div className="panel-detail">
