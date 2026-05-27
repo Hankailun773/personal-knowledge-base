@@ -114,7 +114,7 @@ function stripHtml(html) {
 }
 
 function getSearchPreview(entry, query) {
-  const text = stripHtml(entry.content || '')
+  const text = stripHtml(stripBase64(entry.content || ''))
   if (!text) return null
   const q = query.toLowerCase()
   const idx = text.toLowerCase().indexOf(q)
@@ -147,6 +147,7 @@ export default function App() {
   const [expandedEntryIds, setExpandedEntryIds] = useState(new Set())
 
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
 
   const [renamingCatId, setRenamingCatId] = useState(null)
   const [renameValue, setRenameValue] = useState('')
@@ -199,14 +200,21 @@ export default function App() {
   const autoSaveTimerRef = useRef(null)
   const searchInputRef = useRef(null)
   const entryPanelRef = useRef(null)
+  const sidebarRef = useRef(null)
   const savedMsgTimerRef = useRef(null)
   const [pendingContent, setPendingContent] = useState(null) // null = 无待保存内容
   const pendingContentRef = useRef(null)
   const isDirtyRef = useRef(false)
   const [saveStatus, setSaveStatus] = useState(null) // null | 'saved'
   const [exportStatus, setExportStatus] = useState(null) // null | 'done'
+  const [exportAllStatus, setExportAllStatus] = useState(null) // null | 'loading' | 'done' | 'error'
+  const [exportAllMsg, setExportAllMsg] = useState('')
+  const [importAllStatus, setImportAllStatus] = useState(null) // null | 'loading' | 'done' | 'error'
+  const [importAllMsg, setImportAllMsg] = useState('')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const exportTimerRef = useRef(null)
+  const exportAllTimerRef = useRef(null)
+  const importAllTimerRef = useRef(null)
   const [batchMode, setBatchMode] = useState(false)
   const [batchSelectedIds, setBatchSelectedIds] = useState(new Set())
   const [batchTagPickerOpen, setBatchTagPickerOpen] = useState(false)
@@ -214,6 +222,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false)
   const [selectedHistoryIdx, setSelectedHistoryIdx] = useState(null)
   const [restoreKey, setRestoreKey] = useState(0)
+  const [focusMode, setFocusMode] = useState(false)
 
   useEffect(() => {
     window.electronAPI.getData().then((d) => {
@@ -240,31 +249,42 @@ export default function App() {
     localStorage.setItem('darkMode', String(darkMode))
   }, [darkMode])
 
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setDebouncedSearchQuery('')
+      return
+    }
+    const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
   function handleResizerMouseDown(e, which) {
     e.preventDefault()
     document.body.style.userSelect = 'none'
     document.body.style.cursor = 'col-resize'
+    document.body.classList.add('is-dragging')
     const startX = e.clientX
     const startWidth = which === 'sidebar' ? sidebarWidth : entriesWidth
     let currentWidth = startWidth
+    const node = which === 'sidebar' ? sidebarRef.current : entryPanelRef.current
 
     function onMove(ev) {
       const delta = ev.clientX - startX
-      if (which === 'sidebar') {
-        currentWidth = Math.min(280, Math.max(140, startWidth + delta))
-        setSidebarWidth(currentWidth)
-      } else {
-        currentWidth = Math.min(400, Math.max(180, startWidth + delta))
-        setEntriesWidth(currentWidth)
-      }
+      currentWidth = which === 'sidebar'
+        ? Math.min(280, Math.max(140, startWidth + delta))
+        : Math.min(400, Math.max(180, startWidth + delta))
+      if (node) node.style.width = currentWidth + 'px'
     }
 
     function onUp() {
       document.body.style.userSelect = ''
       document.body.style.cursor = ''
+      document.body.classList.remove('is-dragging')
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
       const key = which === 'sidebar' ? 'sidebarWidth' : 'entriesWidth'
+      if (which === 'sidebar') setSidebarWidth(currentWidth)
+      else setEntriesWidth(currentWidth)
       localStorage.setItem(key, String(currentWidth))
     }
 
@@ -275,9 +295,9 @@ export default function App() {
   // 全局快捷键（用 ref 包裹 handler，只注册一次监听器）
   const shortcutHandlerRef = useRef(null)
   shortcutHandlerRef.current = (e) => {
-    if (e.key === 'Escape' && batchMode) {
-      exitBatchMode()
-      return
+    if (e.key === 'Escape') {
+      if (focusMode) { setFocusMode(false); return }
+      if (batchMode) { exitBatchMode(); return }
     }
     if (!e.metaKey) return
     const tag = document.activeElement?.tagName
@@ -307,7 +327,10 @@ export default function App() {
       return
     }
     if (e.key === 'f' || e.key === 'F') {
-      if (!inInput && !inRichEditor) {
+      if (e.shiftKey) {
+        e.preventDefault()
+        setFocusMode(v => !v)
+      } else if (!inInput && !inRichEditor) {
         e.preventDefault()
         searchInputRef.current?.focus()
         searchInputRef.current?.select()
@@ -866,6 +889,56 @@ export default function App() {
     }
   }
 
+  async function handleExportAll() {
+    if (exportAllStatus === 'loading') return
+    setExportAllStatus('loading')
+    setExportAllMsg('')
+    try {
+      const result = await window.electronAPI.exportAllData()
+      if (result?.success) {
+        setExportAllStatus('done')
+        setExportAllMsg(result.filePath.split('/').pop())
+      } else if (result?.success === false && !result?.error) {
+        // 用户取消
+        setExportAllStatus(null)
+        return
+      } else {
+        setExportAllStatus('error')
+        setExportAllMsg(result?.error || '导出失败')
+      }
+    } catch (err) {
+      setExportAllStatus('error')
+      setExportAllMsg(err.message || '导出失败')
+    }
+    clearTimeout(exportAllTimerRef.current)
+    exportAllTimerRef.current = setTimeout(() => { setExportAllStatus(null); setExportAllMsg('') }, 3000)
+  }
+
+  async function handleImportAll() {
+    if (importAllStatus === 'loading') return
+    if (!window.confirm('导入将覆盖当前所有数据，确认继续？')) return
+    setImportAllStatus('loading')
+    setImportAllMsg('')
+    try {
+      const result = await window.electronAPI.importAllData()
+      if (result?.success) {
+        setImportAllStatus('done')
+        setImportAllMsg('导入成功，请重启应用以加载数据')
+      } else if (result?.success === false && !result?.error) {
+        setImportAllStatus(null)
+        return
+      } else {
+        setImportAllStatus('error')
+        setImportAllMsg(result?.error || '导入失败')
+      }
+    } catch (err) {
+      setImportAllStatus('error')
+      setImportAllMsg(err.message || '导入失败')
+    }
+    clearTimeout(importAllTimerRef.current)
+    importAllTimerRef.current = setTimeout(() => { setImportAllStatus(null); setImportAllMsg('') }, 5000)
+  }
+
   function handleRestoreHistory(snapshot) {
     setEditContent(snapshot.content)
     setPendingContent(snapshot.content)
@@ -958,7 +1031,7 @@ export default function App() {
   }
   const allTagNames = [...tagMap.keys()].sort()
 
-  const isSearching = searchQuery.trim().length > 0
+  const isSearching = debouncedSearchQuery.trim().length > 0
 
   const batchSelectedEntries = batchMode
     ? [...batchSelectedIds].map((id) => findEntryInData(id, data)).filter(Boolean)
@@ -989,8 +1062,8 @@ export default function App() {
   }
   const searchResults = isSearching
     ? allSearchable.filter(({ entry }) => {
-        const q = searchQuery.toLowerCase()
-        return entry.title.toLowerCase().includes(q) || stripHtml(entry.content || '').toLowerCase().includes(q)
+        const q = debouncedSearchQuery.toLowerCase()
+        return entry.title.toLowerCase().includes(q) || stripHtml(stripBase64(entry.content || '')).toLowerCase().includes(q)
       })
     : []
 
@@ -1087,12 +1160,15 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${focusMode ? ' focus-mode' : ''}`}>
       {/* 左侧分类导航 */}
-      <aside className="sidebar" style={{ width: sidebarWidth }}>
+      <aside className="sidebar" style={{ width: sidebarWidth }} ref={sidebarRef}>
         <div className="sidebar-header">
-          <span className="sidebar-icon">📚</span>
-          <span className="sidebar-title">Kn0wledge</span>
+          <svg className="sidebar-icon" width="22" height="22" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 90 L20 45 Q50 8 80 45 L80 90 Z" stroke="currentColor" strokeWidth="6" strokeLinejoin="round"/>
+            <rect x="14" y="90" width="72" height="5" rx="2.5" fill="currentColor" opacity="0.5"/>
+          </svg>
+          <span className="sidebar-title">Nook</span>
         </div>
 
         <div className="search-box">
@@ -1178,16 +1254,65 @@ export default function App() {
               />
             </div>
           ) : (
-            <div className="sidebar-footer-row">
-              <button className="add-btn" onClick={() => setIsAddingCat(true)}>
-                <span>+</span> 新增分类
-              </button>
-              <button
-                className="dark-toggle-btn"
-                onClick={() => setDarkMode((d) => !d)}
-                title={darkMode ? '切换到浅色模式' : '切换到深色模式'}
-              >{darkMode ? '☀️' : '🌙'}</button>
-            </div>
+            <>
+              {(importAllStatus && importAllStatus !== 'loading') || (exportAllStatus && exportAllStatus !== 'loading') ? (
+                <div className={`export-all-status ${(importAllStatus === 'error' || exportAllStatus === 'error') ? 'export-all-status-error' : ''}`}>
+                  {importAllStatus && importAllStatus !== 'loading'
+                    ? (importAllStatus === 'done' ? `✓ ${importAllMsg}` : `✗ ${importAllMsg}`)
+                    : (exportAllStatus === 'done' ? `✓ ${exportAllMsg}` : `✗ ${exportAllMsg}`)
+                  }
+                </div>
+              ) : null}
+              <div className="sidebar-footer-btns">
+                <button className="add-btn" onClick={() => setIsAddingCat(true)}>
+                  <span>+</span> 新增分类
+                </button>
+                <div className="sidebar-icon-btns">
+                  <button
+                    className="dark-toggle-btn"
+                    onClick={handleImportAll}
+                    title="导入备份"
+                    data-tooltip="导入备份"
+                    disabled={importAllStatus === 'loading'}
+                  >
+                    {importAllStatus === 'loading' ? '…' : '⬇'}
+                  </button>
+                  <button
+                    className="dark-toggle-btn"
+                    onClick={handleExportAll}
+                    title="导出整库"
+                    data-tooltip="导出整库"
+                    disabled={exportAllStatus === 'loading'}
+                  >
+                    {exportAllStatus === 'loading' ? '…' : '⬆'}
+                  </button>
+                  <button
+                    className="dark-toggle-btn"
+                    onClick={() => setDarkMode((d) => !d)}
+                    title="切换主题"
+                    data-tooltip="切换主题"
+                  >
+                    {darkMode ? (
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="8" y1="1" x2="8" y2="2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="8" y1="13.5" x2="8" y2="15" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="1" y1="8" x2="2.5" y2="8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="13.5" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="3.05" y1="3.05" x2="4.11" y2="4.11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="11.89" y1="11.89" x2="12.95" y2="12.95" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="12.95" y1="3.05" x2="11.89" y2="4.11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                        <line x1="4.11" y1="11.89" x2="3.05" y2="12.95" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M13.5 10.5A6 6 0 0 1 5.5 2.5a6 6 0 1 0 8 8z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </aside>
@@ -1338,7 +1463,7 @@ export default function App() {
                       <>
                         <div className="entry-info">
                           <span className="entry-title">{entry.title}</span>
-                          {highlightMatch(getSearchPreview(entry, searchQuery), searchQuery)}
+                          {highlightMatch(getSearchPreview(entry, debouncedSearchQuery), debouncedSearchQuery)}
                           {renderEntryMeta(entry, parent ? `${cat?.name || ''} / ${parent.title}` : cat?.name || '')}
                         </div>
                         <button
@@ -1802,6 +1927,8 @@ export default function App() {
                   return flat
                 }}
                 onNavigate={handleNavigateToEntry}
+                focusMode={focusMode}
+                onToggleFocus={() => setFocusMode(v => !v)}
               />
             </div>
             )}

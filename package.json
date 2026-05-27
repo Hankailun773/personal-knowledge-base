@@ -1,6 +1,6 @@
 {
-  "name": "kn0wledge",
-  "productName": "Kn0wledge",
+  "name": "nook",
+  "productName": "Nook",
   "version": "1.0.0",
   "description": "Knowledge base desktop app",
   "main": "electron/main.js",
@@ -10,17 +10,25 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tiptap/extension-code-block-lowlight": "^3.23.6",
     "@tiptap/extension-color": "^3.23.6",
     "@tiptap/extension-highlight": "^3.23.6",
     "@tiptap/extension-image": "3.23.6",
+    "@tiptap/extension-table": "^3.23.6",
+    "@tiptap/extension-table-cell": "^3.23.6",
+    "@tiptap/extension-table-header": "^3.23.6",
+    "@tiptap/extension-table-row": "^3.23.6",
     "@tiptap/extension-text-style": "^3.23.6",
     "@tiptap/extension-underline": "^3.23.6",
     "@tiptap/pm": "^3.23.6",
     "@tiptap/react": "^3.23.6",
     "@tiptap/starter-kit": "^3.23.6",
+    "archiver": "^5.3.2",
+    "lowlight": "^3.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
+    "react-window": "^1.8.10",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

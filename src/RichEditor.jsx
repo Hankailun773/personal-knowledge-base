@@ -6,6 +6,14 @@ import { Highlight } from '@tiptap/extension-highlight'
 import { Image } from '@tiptap/extension-image'
 import { Node, Extension } from '@tiptap/core'
 import { useEffect, useState, useRef } from 'react'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { createLowlight, common } from 'lowlight'
+import { Table } from '@tiptap/extension-table'
+import { TableRow } from '@tiptap/extension-table-row'
+import { TableHeader } from '@tiptap/extension-table-header'
+import { TableCell } from '@tiptap/extension-table-cell'
+
+const lowlight = createLowlight(common)
 
 function countWords(text) {
   const zhRe = /[一-龥]/g
@@ -190,14 +198,17 @@ function fileToBase64(file) {
   })
 }
 
-export default function RichEditor({ content, editable, onChange, getEntries, onNavigate }) {
+export default function RichEditor({ content, editable, onChange, getEntries, onNavigate, focusMode, onToggleFocus }) {
   const [, setTick] = useState(0)
   const [linkActive, setLinkActive] = useState(false)
   const [linkQuery, setLinkQuery] = useState('')
   const [linkIdx, setLinkIdx] = useState(0)
   const [popupPos, setPopupPos] = useState({ top: 0, left: 0 })
+  const [tablePickerOpen, setTablePickerOpen] = useState(false)
+  const [tableHover, setTableHover] = useState({ row: -1, col: -1 })
   const wrapperRef = useRef(null)
   const popupRef = useRef(null)
+  const tablePickerRef = useRef(null)
   const editorRef = useRef(null)
   const editableRef = useRef(editable)
 
@@ -243,13 +254,18 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({ codeBlock: false }),
       TextStyle,
       Color,
       FontSize,
       Highlight.configure({ multicolor: false }),
       InternalLink,
       ResizableImage.configure({ inline: false, allowBase64: true }),
+      CodeBlockLowlight.configure({ lowlight }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: content || '',
     editable,
@@ -321,6 +337,18 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
 
   useEffect(() => { editorRef.current = editor }, [editor])
   useEffect(() => { editableRef.current = editable }, [editable])
+
+  useEffect(() => {
+    if (!tablePickerOpen) return
+    function onDocMouseDown(e) {
+      if (!tablePickerRef.current?.contains(e.target)) {
+        setTablePickerOpen(false)
+        setTableHover({ row: -1, col: -1 })
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [tablePickerOpen])
 
   const currentColor = editor?.getAttributes('textStyle')?.color ?? null
   const currentFontSize = (() => {
@@ -480,6 +508,59 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
             title="插入分割线"
           >─</button>
 
+          {/* 代码块 */}
+          <button
+            className={`tb-btn tb-code ${editor.isActive('codeBlock') ? 'tb-active' : ''}`}
+            onMouseDown={cmd(() => editor.chain().focus().toggleCodeBlock().run())}
+            title="代码块"
+          >{'</>'}</button>
+
+          {/* 表格选择器 */}
+          <div className="tb-table-wrap" ref={tablePickerRef}>
+            <button
+              className={`tb-btn ${tablePickerOpen || editor.isActive('table') ? 'tb-active' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                setTablePickerOpen(v => !v)
+                if (tablePickerOpen) setTableHover({ row: -1, col: -1 })
+              }}
+              title="插入表格"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="12" height="12" rx="1.2" stroke="currentColor" strokeWidth="1.2"/>
+                <line x1="5" y1="1" x2="5" y2="13" stroke="currentColor" strokeWidth="1.2"/>
+                <line x1="9" y1="1" x2="9" y2="13" stroke="currentColor" strokeWidth="1.2"/>
+                <line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="1.2"/>
+                <line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" strokeWidth="1.2"/>
+              </svg>
+            </button>
+            {tablePickerOpen && (
+              <div className="table-picker-popup">
+                <div className="table-picker-grid">
+                  {Array.from({ length: 8 }, (_, row) =>
+                    Array.from({ length: 8 }, (_, col) => (
+                      <div
+                        key={`${row}-${col}`}
+                        className={`table-picker-cell${row <= tableHover.row && col <= tableHover.col ? ' tpc-active' : ''}`}
+                        onMouseEnter={() => setTableHover({ row, col })}
+                        onMouseLeave={() => setTableHover({ row: -1, col: -1 })}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          editor.chain().focus().insertTable({ rows: row + 1, cols: col + 1, withHeaderRow: true }).run()
+                          setTablePickerOpen(false)
+                          setTableHover({ row: -1, col: -1 })
+                        }}
+                      />
+                    ))
+                  )}
+                </div>
+                <div className="table-picker-label">
+                  {tableHover.row >= 0 ? `${tableHover.row + 1} × ${tableHover.col + 1}` : '选择表格尺寸'}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="tb-sep" />
 
           {/* 图片 */}
@@ -497,6 +578,27 @@ export default function RichEditor({ content, editable, onChange, getEntries, on
               <path d="M1.5 9.5l2.5-2.5 2 2 2.5-3L11.5 12" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"/>
             </svg>
           </button>
+
+          {/* 聚焦模式 */}
+          {onToggleFocus && (
+            <button
+              className={`tb-btn tb-focus-btn ${focusMode ? 'tb-active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); onToggleFocus() }}
+              title={focusMode ? '退出聚焦模式 (Esc)' : '聚焦模式 (⌘⇧F)'}
+            >
+              {focusMode ? (
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path d="M1 5V1h4M12 5V1H8M1 8v4h4M12 8v4H8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <line x1="4" y1="6.5" x2="9" y2="6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                  <line x1="6.5" y1="4" x2="6.5" y2="9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                </svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path d="M1 5V1h4M12 5V1H8M1 8v4h4M12 8v4H8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
+          )}
         </div>
       )}
 

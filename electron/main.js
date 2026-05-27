@@ -1,6 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
+const archiver = require('archiver')
+const extractZip = require('extract-zip')
 
 const isDev = process.env.NODE_ENV !== 'production'
 
@@ -68,7 +71,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'Kn0wledge',
+    title: 'Nook',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#ffffff',
     icon: path.join(__dirname, '../assets/icon.icns'),
@@ -122,6 +125,53 @@ ipcMain.handle('export-markdown', async (event, { title, markdown }) => {
   if (canceled || !filePath) return { success: false }
   fs.writeFileSync(filePath, markdown, 'utf-8')
   return { success: true }
+})
+
+ipcMain.handle('export-all-data', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const today = new Date().toISOString().slice(0, 10)
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: '导出整库',
+    defaultPath: `Nook_backup_${today}.zip`,
+    filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }],
+  })
+  if (canceled || !filePath) return { success: false }
+  const dataFilePath = getDataFilePath()
+  return new Promise((resolve) => {
+    const output = fs.createWriteStream(filePath)
+    const archive = archiver('zip', { zlib: { level: 9 } })
+    output.on('close', () => resolve({ success: true, filePath }))
+    archive.on('error', (err) => resolve({ success: false, error: err.message }))
+    archive.pipe(output)
+    archive.file(dataFilePath, { name: 'data.json' })
+    archive.finalize()
+  })
+})
+
+ipcMain.handle('import-all-data', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: '导入备份',
+    filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }],
+    properties: ['openFile'],
+  })
+  if (canceled || !filePaths[0]) return { success: false }
+  const zipPath = filePaths[0]
+  const tmpDir = path.join(os.tmpdir(), `nook_import_${Date.now()}`)
+  try {
+    fs.mkdirSync(tmpDir, { recursive: true })
+    await extractZip(zipPath, { dir: tmpDir })
+    const jsonPath = path.join(tmpDir, 'data.json')
+    if (!fs.existsSync(jsonPath)) return { success: false, error: 'ZIP 中未找到 data.json' }
+    const rawData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'))
+    const normalized = normalizeData(rawData)
+    writeData(normalized)
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err.message }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  }
 })
 
 ipcMain.handle('pick-image', async (event) => {
