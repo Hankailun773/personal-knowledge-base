@@ -5,7 +5,7 @@ const os = require('os')
 const archiver = require('archiver')
 const extractZip = require('extract-zip')
 
-const isDev = process.env.NODE_ENV !== 'production'
+const isDev = !app.isPackaged
 
 const DEFAULT_DATA = {
   categories: [

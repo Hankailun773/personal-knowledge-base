@@ -14,6 +14,9 @@
 - **样式**：纯 CSS，无 UI 框架
 - **IPC**：contextBridge + ipcMain.handle（preload.js 暴露为 `window.electronAPI`）
 - **数据持久化**：JSON 文件，路径 `app.getPath('userData')/data.json`
+- **字体**：Pacifico（logo）、Lora（标题）
+- **图标**：自定义 SVG 壁龛图标（`assets/icon.svg`、`assets/icon.icns`）
+- **压缩/解压**：archiver v5（CommonJS）、extract-zip
 
 ---
 
@@ -22,6 +25,7 @@
 ```bash
 npm run dev    # 同时启动 Vite dev server + Electron（用 concurrently + wait-on）
 npm run build  # 构建前端产物到 dist/
+npm run dist   # 打包 Mac 应用（vite build + electron-builder --mac），输出到 release/
 ```
 
 ---
@@ -72,6 +76,15 @@ First-cc/
 24. **UI 视觉优化**：引入 CSS 变量统一三栏背景色与分隔线（`--col-sidebar-bg/entries-bg/detail-bg/divider`，浅色暖色调 / 深色分层）；引入 Lora 字体变量（`--font-title`），条目大标题 Lora 29px；左侧导航功能项（最近编辑 / 标签）通过 `:nth-child` 视觉降级 + 分隔线；右侧内容区加 `max-width: 780px` 限制
 25. **工具栏字体大小选择器**：自定义 `FontSize` 扩展（基于 `addGlobalAttributes` 挂载到 `textStyle` mark），工具栏 H1/H2 后新增 `<select>` 下拉，选项为小 13px / 标准 15px / 大 17px / 超大 20px；用 `nodesBetween` 遍历选区检测混合字号，混合时显示 `─` 占位符，点击任意选项强制统一应用
 26. **三栏拖拽调整宽度**：左侧导航和中间列表之间、中间列表和右侧内容区之间各有一个 5px 透明拖拽手柄（`.col-resizer`），hover 时显示 1px 分隔线；拖拽实时更新宽度；宽度限制：左侧 140–280px（默认 200），中间 180–400px（默认 240）；拖拽结束后宽度持久化到 `localStorage`（key: `sidebarWidth` / `entriesWidth`），应用启动时读取恢复
+27. **代码块支持**：Tiptap CodeBlockLowlight 扩展，支持 29 种语言语法高亮，工具栏 `</>` 按钮
+28. **表格支持**：Tiptap Table 扩展，工具栏网格选择器（最大 8×8），Tab 键跳格，可拖拽调整列宽
+29. **聚焦模式**：隐藏左右两栏，编辑器居中最大宽度 760px，Cmd+Shift+F 或工具栏按钮切换，Esc 退出
+30. **导出整库**：导出为 ZIP 文件（含所有 JSON 数据），左下角导出按钮，使用 archiver v5
+31. **导入备份**：从 ZIP 文件恢复数据，覆盖前有确认弹窗，成功后提示重启
+32. **搜索防抖优化**：300ms 防抖，搜索时过滤 base64 图片内容，避免卡顿
+33. **应用更名为 Nook**：应用名、窗口标题、左上角 logo 全部更新
+34. **左上角 logo 优化**：壁龛 SVG 图标 + Pacifico 连笔字体
+35. **UI 优化**：左下角操作栏重排、右上角 tab 样式、条目选中蓝色竖线、三栏拖拽修复
 
 ---
 
@@ -151,6 +164,11 @@ First-cc/
 
 **main.js / preload.js 改动需重启应用**
 - 修改 `electron/main.js` 或 `electron/preload.js` 后，必须重启（重新执行 `npm run dev`）才能生效，Vite HMR 不覆盖 Electron 主进程
+
+**打包注意事项**
+- 使用 `electron-builder`，配置在 `package.json` 的 `"build"` 字段，输出到 `release/`（已加入 `.gitignore`）
+- `isDev` 判断使用 `app.isPackaged`（不用 `NODE_ENV`），打包后自动加载 `dist/index.html`
+- Electron 主进程运行时依赖（`archiver`、`extract-zip` 等）必须放在 `dependencies` 而非 `devDependencies`，否则打包后报 `Cannot find module`
 
 **新增数据字段**
 - 在 `main.js` 的 `normalizeData()` 中同步添加新字段的默认值，保证旧数据文件兼容
